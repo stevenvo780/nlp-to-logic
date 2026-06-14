@@ -29,7 +29,7 @@ function PlaygroundInner() {
 
   // Cargar ejemplo desde ?ejemplo=<id> (vinculado desde /casos)
   useEffect(() => {
-    const id = searchParams.get('ejemplo');
+    const id = searchParams?.get('ejemplo');
     if (!id) return;
     const ex = EXAMPLES.find((e) => e.id === id);
     if (!ex) return;

@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import Playground from '@/components/Playground';
 
+// useSearchParams en Playground require que la pagina no sea estatica
+export const dynamic = 'force-dynamic';
+
 const STLANG_VERSION = 'v4.15';
 const AUTOLOGIC_VERSION = 'v2.2';
 
