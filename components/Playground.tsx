@@ -104,7 +104,7 @@ function PlaygroundInner() {
         <button
           onClick={run}
           disabled={loading || !text.trim()}
-          className="ml-auto rounded-md bg-accent px-5 py-2 text-sm font-semibold text-[#08121a] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          className="ml-auto rounded-md bg-accent px-5 py-2 text-sm font-semibold text-[var(--on-primary)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? 'Procesando...' : 'Formalizar y ejecutar →'}
         </button>
