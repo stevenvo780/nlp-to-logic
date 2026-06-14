@@ -1,0 +1,120 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.emitST = emitST;
+/**
+ * Emite código ST completo a partir de fórmulas construidas.
+ */
+function emitST(options) {
+    const { profile, language, includeComments, atoms, formulas, detectedPatterns } = options;
+    const lines = [];
+    const diagnostics = [];
+    // ── Header ──────────────────────────────────
+    if (includeComments) {
+        lines.push('// ═══════════════════════════════════════');
+        lines.push('// Formalización automática — autologic');
+        lines.push(`// Perfil: ${profile}`);
+        lines.push(`// Idioma: ${language}`);
+        if (detectedPatterns.length > 0) {
+            lines.push(`// Patrones: ${detectedPatterns.join(', ')}`);
+        }
+        lines.push('// ═══════════════════════════════════════');
+        lines.push('');
+    }
+    // ── Logic declaration ───────────────────────
+    lines.push(`logic ${profile}`);
+    lines.push('');
+    // ── Interpret declarations ──────────────────
+    if (atoms.size > 0) {
+        if (includeComments) {
+            lines.push('// ── Proposiciones atómicas ────────────');
+        }
+        for (const [atomId, text] of atoms) {
+            lines.push(`interpret "${text}" as ${atomId}`);
+        }
+        lines.push('');
+    }
+    // ── Formulas (axioms, derives, checks) ──────
+    if (formulas.length > 0) {
+        if (includeComments) {
+            lines.push('// ── Estructura argumental ─────────────');
+            if (detectedPatterns.length > 0) {
+                lines.push(`// Patrón detectado: ${detectedPatterns.join(', ')}`);
+            }
+        }
+        lines.push('');
+        // Agrupar por tipo
+        const axioms = formulas.filter(f => f.stType === 'axiom');
+        const derives = formulas.filter(f => f.stType === 'derive');
+        const checks = formulas.filter(f => f.stType === 'check');
+        // Emitir axiomas — sintaxis ST: `axiom name = FORMULA`
+        for (const axiom of axioms) {
+            if (includeComments && axiom.comment) {
+                lines.push(`// ${axiom.comment}`);
+            }
+            lines.push(`axiom ${axiom.label} = ${axiom.formula}`);
+        }
+        if (axioms.length > 0 && derives.length > 0) {
+            lines.push('');
+        }
+        // Emitir derivaciones — sintaxis ST: `derive FORMULA from {labels}`
+        for (const derive of derives) {
+            if (includeComments && derive.comment) {
+                lines.push(`// ${derive.comment}`);
+            }
+            // Construir la lista de axiomas/premisas para el derive
+            const premiseLabels = axioms.map(a => a.label);
+            if (premiseLabels.length > 0) {
+                lines.push(`derive ${derive.formula} from {${premiseLabels.join(', ')}}`);
+            }
+            else {
+                lines.push(`derive ${derive.formula}`);
+            }
+        }
+        if (derives.length > 0 && checks.length > 0) {
+            lines.push('');
+        }
+        // Emitir checks (solo los generados explícitamente por el pipeline)
+        for (const check of checks) {
+            if (includeComments && check.comment) {
+                lines.push(`// ${check.comment}`);
+            }
+            lines.push(`check valid (${check.formula})`);
+        }
+        // NOTE: We no longer auto-generate `check valid` for conditional axioms.
+        // `check valid` tests tautology (true in ALL interpretations), not argument
+        // validity. Contingent conditionals like P→Q are never tautologies, so
+        // auto-checking them always fails and produces misleading output.
+        // Argument validity is already verified by `derive ... from {axioms}`.
+    }
+    // Limpiar líneas en blanco consecutivas
+    const code = cleanOutput(lines);
+    // Diagnóstico si no hay fórmulas
+    if (formulas.length === 0) {
+        diagnostics.push({
+            severity: 'warning',
+            message: 'No se generaron fórmulas. El texto puede ser demasiado simple o no contener estructura lógica detectable.',
+            code: 'NO_FORMULAS',
+        });
+    }
+    return { code, diagnostics };
+}
+/**
+ * Limpia el código de salida eliminando líneas en blanco excesivas.
+ */
+function cleanOutput(lines) {
+    const result = [];
+    let lastWasEmpty = false;
+    for (const line of lines) {
+        const isEmpty = line.trim() === '';
+        if (isEmpty && lastWasEmpty)
+            continue;
+        result.push(line);
+        lastWasEmpty = isEmpty;
+    }
+    // Eliminar trailing newlines excesivos
+    while (result.length > 0 && result[result.length - 1].trim() === '') {
+        result.pop();
+    }
+    return result.join('\n') + '\n';
+}
+//# sourceMappingURL=st-emitter.js.map

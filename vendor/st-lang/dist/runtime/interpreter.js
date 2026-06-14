@@ -1,0 +1,2860 @@
+"use strict";
+/**
+ * ST Runtime — Intérprete de scripts .st
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Interpreter = void 0;
+const types_1 = require("../types");
+const parser_1 = require("../parser/parser");
+const interface_1 = require("../logic/profiles/interface");
+const propositional_1 = require("../logic/profiles/classical/propositional");
+const arithmetic_1 = require("../logic/profiles/arithmetic");
+const format_1 = require("./format");
+const fallacies_1 = require("./fallacies");
+// Barrel import: registra todos los perfiles automáticamente
+require("../logic/profiles");
+const compiler_1 = require("../semantics/text-layer/compiler");
+const formula_classifier_1 = require("./formula-classifier");
+const formula_factory_1 = require("./formula-factory");
+const MAX_CALL_DEPTH = 50000;
+const DEFAULT_MAX_RUNTIME_STEPS = 500000;
+const DEFAULT_MAX_RUNTIME_CALLS = 100000;
+/**
+ * Reemplaza el contenido de strings y comentarios con espacios,
+ * preservando newlines y longitudes. Se usa para escaneos léxicos previos
+ * (p.ej. detección de `logic`) sin falsos positivos dentro de literales o
+ * comentarios.
+ */
+function stripStringsAndComments(source) {
+    const out = [];
+    let i = 0;
+    const n = source.length;
+    while (i < n) {
+        const c = source[i];
+        const next = i + 1 < n ? source[i + 1] : '';
+        if (c === '/' && next === '/') {
+            out.push('  ');
+            i += 2;
+            while (i < n && source[i] !== '\n') {
+                out.push(' ');
+                i++;
+            }
+            continue;
+        }
+        if (c === '/' && next === '*') {
+            out.push('  ');
+            i += 2;
+            while (i < n && !(source[i] === '*' && source[i + 1] === '/')) {
+                out.push(source[i] === '\n' ? '\n' : ' ');
+                i++;
+            }
+            if (i < n) {
+                out.push('  ');
+                i += 2;
+            }
+            continue;
+        }
+        if (c === '"' || c === "'") {
+            const quote = c;
+            out.push(' ');
+            i++;
+            while (i < n && source[i] !== quote) {
+                if (source[i] === '\\' && i + 1 < n) {
+                    out.push(source[i + 1] === '\n' ? ' \n' : '  ');
+                    i += 2;
+                    continue;
+                }
+                out.push(source[i] === '\n' ? '\n' : ' ');
+                i++;
+            }
+            if (i < n) {
+                out.push(' ');
+                i++;
+            }
+            continue;
+        }
+        if (c === '[' && next === '[') {
+            out.push('  ');
+            i += 2;
+            while (i < n && !(source[i] === ']' && source[i + 1] === ']')) {
+                out.push(source[i] === '\n' ? '\n' : ' ');
+                i++;
+            }
+            if (i < n) {
+                out.push('  ');
+                i += 2;
+            }
+            continue;
+        }
+        out.push(c);
+        i++;
+    }
+    return out.join('');
+}
+class Interpreter {
+    theory;
+    profile = null;
+    textLayer;
+    diagnostics = [];
+    results = [];
+    stdoutLines = [];
+    letBindings = new Map();
+    letDescriptions = new Map();
+    theories = new Map();
+    /** Plantillas de teorías (clases) */
+    theoryTemplates = new Map();
+    /** Nombre de la teoría actual (si estamos dentro de una) */
+    currentTheoryName = null;
+    /** Funciones declaradas */
+    functions = new Map();
+    /** Señal de return activa (para salir de funciones) */
+    returnSignal = false;
+    returnValue = undefined;
+    /** Modo importación: solo registrar exports */
+    isImporting = false;
+    /** Elementos exportados por el archivo actual */
+    exportedBindings = new Map();
+    exportedAxioms = new Map();
+    exportedTheorems = new Map();
+    exportedFunctions = new Map();
+    exportedTheories = new Map();
+    /** Profundidad de llamadas a funciones (anti-recursión infinita) */
+    callDepth = 0;
+    currentBindingFrame = null;
+    runtimeStepCount = 0;
+    runtimeCallCount = 0;
+    /** Cache de resolución: fórmula original → fórmula resuelta (invalidado al cambiar bindings) */
+    resolveCache = new WeakMap();
+    resolveCacheGeneration = 0;
+    /** Memoización automática para funciones con argumentos numéricos (fibonacci, factorial, etc.) */
+    fnMemoCache = new Map();
+    static MEMO_CACHE_MAX = 50000;
+    /** v3: Formal definitions (define Name(params?) := body) */
+    definitions = new Map();
+    /** v3: Bibliographic sources */
+    sources = new Map();
+    constructor() {
+        this.theory = this.createEmptyTheory();
+        this.textLayer = (0, compiler_1.createTextLayerState)();
+        this.registerBuiltins();
+    }
+    /** Registra funciones nativas (Built-ins) para metaprogramación e interactividad */
+    registerBuiltins() {
+        const builtins = [
+            'typeof',
+            'is_valid',
+            'is_satisfiable',
+            'get_atoms',
+            'atoms_of',
+            'len',
+            'at',
+            'formula_eq',
+            'input',
+        ];
+        for (const name of builtins) {
+            this.functions.set(name, {
+                kind: 'fn_decl',
+                name,
+                params: ['arg'],
+                body: [],
+                source: { line: 0, column: 0 },
+            });
+        }
+    }
+    createEmptyTheory() {
+        return {
+            profile: '',
+            axioms: new Map(),
+            theorems: new Map(),
+            claims: new Map(),
+            judgments: [],
+        };
+    }
+    importedFiles = new Map();
+    activeImports = new Set();
+    reset() {
+        this.theory = this.createEmptyTheory();
+        this.textLayer = (0, compiler_1.createTextLayerState)();
+        this.diagnostics = [];
+        this.results = [];
+        this.stdoutLines = [];
+        this.profile = null;
+        this.importedFiles.clear();
+        this.activeImports.clear();
+        this.letBindings.clear();
+        this.letDescriptions.clear();
+        this.theories.clear();
+        this.currentTheoryName = null;
+        this.functions.clear();
+        this.registerBuiltins();
+        this.returnSignal = false;
+        this.returnValue = undefined;
+        this.isImporting = false;
+        this.exportedBindings.clear();
+        this.exportedAxioms.clear();
+        this.exportedTheorems.clear();
+        this.exportedFunctions.clear();
+        this.exportedTheories.clear();
+        this.currentBindingFrame = null;
+        this.runtimeStepCount = 0;
+        this.runtimeCallCount = 0;
+        this.fnMemoCache.clear();
+        this.definitions.clear();
+        this.sources.clear();
+    }
+    // ── Memoización de funciones ──────────────────────────────
+    /** Serializa una fórmula a una cadena para usar como clave de cache */
+    serializeFormulaKey(f) {
+        if (f.kind === 'number')
+            return `N:${f.value}`;
+        if (f.kind === 'atom')
+            return `A:${f.name}`;
+        if (f.kind === 'list')
+            return `L:[${f.args?.map((a) => this.serializeFormulaKey(a)).join(',') ?? ''}]`;
+        return `${f.kind}(${f.args?.map((a) => this.serializeFormulaKey(a)).join(',') ?? ''})`;
+    }
+    /** Genera la clave de memoización: nombre_función(arg1,arg2,...) */
+    memoKey(name, args) {
+        // Solo memoizar si todos los argumentos son valores concretos (number, atom sin variables)
+        for (const arg of args) {
+            if (arg.kind !== 'number' && arg.kind !== 'atom')
+                return null;
+        }
+        return `${name}(${args.map((a) => this.serializeFormulaKey(a)).join(',')})`;
+    }
+    /** Verifica si una función es pura (sin side effects como print, set, check, axiom) */
+    isPureFn(fn) {
+        const check = (stmts) => {
+            for (const s of stmts) {
+                switch (s.kind) {
+                    case 'print_cmd':
+                    case 'set_cmd':
+                    case 'derive_cmd':
+                    case 'check_valid_cmd':
+                    case 'check_satisfiable_cmd':
+                    case 'check_equivalent_cmd':
+                    case 'prove_cmd':
+                    case 'axiom_decl':
+                    case 'theorem_decl':
+                    case 'theory_decl':
+                    case 'import_decl':
+                    case 'export_decl':
+                    case 'logic_decl':
+                    case 'glossary_cmd':
+                    case 'unfold_cmd':
+                    case 'fold_cmd':
+                        return false;
+                    case 'if_stmt': {
+                        const ifS = s;
+                        for (const branch of ifS.branches) {
+                            if (!check(branch.body))
+                                return false;
+                        }
+                        if (ifS.elseBranch && !check(ifS.elseBranch))
+                            return false;
+                        break;
+                    }
+                    case 'for_stmt':
+                        if (!check(s.body))
+                            return false;
+                        break;
+                    case 'while_stmt':
+                        if (!check(s.body))
+                            return false;
+                        break;
+                    // let_decl, return_stmt, fn_call, fn_decl are considered pure
+                }
+            }
+            return true;
+        };
+        return check(fn.body);
+    }
+    // ── Fin memoización ───────────────────────────────────────
+    getRuntimeStepLimit() {
+        const configured = this.getBinding('max_steps') || this.getBinding('max_runtime_steps');
+        if (configured?.kind === 'number' && configured.value && configured.value > 0) {
+            return Math.floor(configured.value);
+        }
+        return DEFAULT_MAX_RUNTIME_STEPS;
+    }
+    getRuntimeCallLimit() {
+        const configured = this.getBinding('max_calls') || this.getBinding('max_runtime_calls');
+        if (configured?.kind === 'number' && configured.value && configured.value > 0) {
+            return Math.floor(configured.value);
+        }
+        return DEFAULT_MAX_RUNTIME_CALLS;
+    }
+    tickRuntimeStep() {
+        this.runtimeStepCount++;
+        const limit = this.getRuntimeStepLimit();
+        if (this.runtimeStepCount > limit) {
+            throw new Error(`Límite de ejecución excedido (${limit} pasos).`);
+        }
+    }
+    isSafetyLimitMessage(message) {
+        return /Límite de (recursión|ejecución|llamadas ST)/i.test(message);
+    }
+    createBindingFrame() {
+        return {
+            bindings: new Map(),
+            descriptions: new Map(),
+            parent: this.currentBindingFrame,
+        };
+    }
+    findBindingOwner(name) {
+        let frame = this.currentBindingFrame;
+        while (frame) {
+            if (frame.bindings.has(name))
+                return frame;
+            frame = frame.parent;
+        }
+        if (this.letBindings.has(name))
+            return 'global';
+        return undefined;
+    }
+    hasBinding(name) {
+        return this.findBindingOwner(name) !== undefined;
+    }
+    getBinding(name) {
+        const owner = this.findBindingOwner(name);
+        if (!owner)
+            return undefined;
+        return owner === 'global' ? this.letBindings.get(name) : owner.bindings.get(name);
+    }
+    requireFormulaBinding(name) {
+        const binding = this.getBinding(name);
+        if (!binding) {
+            throw new Error(`Binding '${name}' no encontrado.`);
+        }
+        return binding;
+    }
+    defineBinding(name, value, description) {
+        this.invalidateResolveCache();
+        if (this.currentBindingFrame) {
+            this.currentBindingFrame.bindings.set(name, value);
+            if (description)
+                this.currentBindingFrame.descriptions.set(name, description);
+            return;
+        }
+        this.letBindings.set(name, value);
+        if (description)
+            this.letDescriptions.set(name, description);
+    }
+    setBinding(name, value) {
+        this.invalidateResolveCache();
+        const owner = this.findBindingOwner(name);
+        if (owner === 'global') {
+            this.letBindings.set(name, value);
+            return;
+        }
+        if (owner) {
+            owner.bindings.set(name, value);
+            return;
+        }
+        if (this.currentBindingFrame) {
+            this.currentBindingFrame.bindings.set(name, value);
+            return;
+        }
+        this.letBindings.set(name, value);
+    }
+    captureBindingSnapshot(name) {
+        const owner = this.findBindingOwner(name);
+        if (!owner)
+            return { exists: false, owner: 'global' };
+        return {
+            exists: true,
+            value: owner === 'global' ? this.letBindings.get(name) : owner.bindings.get(name),
+            owner,
+        };
+    }
+    restoreBindingSnapshot(name, snapshot) {
+        if (!snapshot.exists) {
+            if (this.currentBindingFrame && this.currentBindingFrame.bindings.has(name)) {
+                this.currentBindingFrame.bindings.delete(name);
+            }
+            this.letBindings.delete(name);
+            return;
+        }
+        if (!snapshot.value) {
+            if (snapshot.owner === 'global')
+                this.letBindings.delete(name);
+            else
+                snapshot.owner.bindings.delete(name);
+            return;
+        }
+        if (snapshot.owner === 'global') {
+            this.letBindings.set(name, snapshot.value);
+            return;
+        }
+        snapshot.owner.bindings.set(name, snapshot.value);
+    }
+    shouldEmitLocalBindings() {
+        return this.currentBindingFrame === null;
+    }
+    execute(source, file = '<stdin>') {
+        this.diagnostics = [];
+        this.results = [];
+        this.stdoutLines = [];
+        this.runtimeStepCount = 0;
+        this.runtimeCallCount = 0;
+        // Pre-scan for profile declarations to enable profile-aware lexing.
+        // Only restrict keywords when there's exactly one profile in the source.
+        // Multi-profile files use all keywords for safety.
+        const scanSource = stripStringsAndComments(source);
+        const profileMatches = scanSource.match(/(?:^|\n)\s*(?:logic|logica)\s+([\w.]+)/g);
+        let detectedProfile;
+        if (profileMatches && profileMatches.length === 1) {
+            const m = profileMatches[0].match(/(?:logic|logica)\s+([\w.]+)/);
+            detectedProfile = m ? m[1] : undefined;
+        }
+        const parser = new parser_1.Parser(file, detectedProfile);
+        const program = parser.parse(source);
+        this.diagnostics.push(...parser.diagnostics);
+        if (parser.diagnostics.some((d) => d.severity === 'error')) {
+            return {
+                stdout: '',
+                stderr: this.diagnostics
+                    .filter((d) => d.severity === 'error')
+                    .map((d) => d.message)
+                    .join('\n'),
+                exitCode: 1,
+                diagnostics: this.diagnostics,
+                results: [],
+            };
+        }
+        this.executeStatementsIterative(program.statements, file);
+        const hasErrors = this.diagnostics.some((d) => d.severity === 'error');
+        return {
+            stdout: this.stdoutLines.join('\n'),
+            stderr: this.diagnostics
+                .filter((d) => d.severity === 'error')
+                .map((d) => d.message)
+                .join('\n'),
+            exitCode: hasErrors ? 3 : 0,
+            diagnostics: this.diagnostics,
+            results: this.results,
+            letDescriptions: Object.fromEntries(this.letDescriptions),
+        };
+    }
+    // Ejecutar un solo statement (para REPL)
+    executeSingle(source) {
+        const parser = new parser_1.Parser('<repl>');
+        const program = parser.parse(source);
+        this.diagnostics = [...parser.diagnostics];
+        this.results = [];
+        this.stdoutLines = [];
+        this.runtimeStepCount = 0;
+        this.runtimeCallCount = 0;
+        if (parser.diagnostics.some((d) => d.severity === 'error')) {
+            return {
+                stdout: '',
+                stderr: parser.diagnostics.map((d) => d.message).join('\n'),
+                exitCode: 1,
+                diagnostics: this.diagnostics,
+                results: [],
+            };
+        }
+        this.executeStatementsIterative(program.statements, '<repl>');
+        return {
+            stdout: this.stdoutLines.join('\n'),
+            stderr: this.diagnostics
+                .filter((d) => d.severity === 'error')
+                .map((d) => d.message)
+                .join('\n'),
+            exitCode: this.diagnostics.some((d) => d.severity === 'error') ? 3 : 0,
+            diagnostics: this.diagnostics,
+            results: this.results,
+        };
+    }
+    executeStatement(stmt) {
+        if (this.returnSignal)
+            return;
+        // Si estamos importando, ignoramos comandos que no sean declaraciones
+        const sideEffects = [
+            'derive_cmd',
+            'check_valid_cmd',
+            'check_satisfiable_cmd',
+            'check_equivalent_cmd',
+            'prove_cmd',
+            'countermodel_cmd',
+            'truth_table_cmd',
+            'print_cmd',
+            'analyze_cmd',
+            'explain_cmd',
+            'render_cmd',
+        ];
+        if (this.isImporting && (sideEffects.includes(stmt.kind) || stmt.kind === 'logic_decl')) {
+            return;
+        }
+        switch (stmt.kind) {
+            case 'logic_decl':
+                return this.execLogicDecl(stmt);
+            case 'axiom_decl':
+                return this.execAxiomDecl(stmt);
+            case 'theorem_decl':
+                return this.execTheoremDecl(stmt);
+            case 'derive_cmd':
+                return this.execDeriveCmd(stmt);
+            case 'check_valid_cmd':
+                return this.execCheckValidCmd(stmt);
+            case 'check_satisfiable_cmd':
+                return this.execCheckSatisfiableCmd(stmt);
+            case 'check_equivalent_cmd':
+                return this.execCheckEquivalentCmd(stmt);
+            case 'prove_cmd':
+                return this.execProveCmd(stmt);
+            case 'countermodel_cmd':
+                return this.execCountermodelCmd(stmt);
+            case 'truth_table_cmd':
+                return this.execTruthTableCmd(stmt);
+            case 'let_decl':
+                return this.execLetDecl(stmt);
+            case 'claim_decl':
+                return this.execClaimDecl(stmt);
+            case 'support_decl':
+                return this.execSupportDecl(stmt);
+            case 'confidence_decl':
+                return this.execConfidenceDecl(stmt);
+            case 'context_decl':
+                return this.execContextDecl(stmt);
+            case 'render_cmd':
+                return this.execRenderCmd(stmt);
+            case 'analyze_cmd':
+                return this.execAnalyzeCmd(stmt);
+            case 'explain_cmd':
+                return this.execExplainCmd(stmt);
+            case 'import_decl':
+                return this.execImportDecl(stmt);
+            case 'proof_block':
+                return this.execProofBlock(stmt);
+            case 'theory_decl':
+                return this.execTheoryDecl(stmt);
+            case 'print_cmd':
+                return this.execPrintCmd(stmt);
+            case 'set_cmd':
+                return this.execSetCmd(stmt);
+            case 'if_stmt':
+                return this.execIfStmt(stmt);
+            case 'for_stmt':
+                return this.execForStmt(stmt);
+            case 'while_stmt':
+                return this.execWhileStmt(stmt);
+            case 'fn_decl':
+                return this.execFnDecl(stmt);
+            case 'return_stmt':
+                return this.execReturnStmt(stmt);
+            case 'fn_call':
+                this.executeFnCall(stmt);
+                return;
+            case 'export_decl':
+                return this.execExportDecl(stmt);
+            case 'define_decl':
+                return this.execDefineDecl(stmt);
+            case 'unfold_cmd':
+                return this.execUnfoldCmd(stmt);
+            case 'fold_cmd':
+                return this.execFoldCmd(stmt);
+            case 'source_decl':
+                return this.execSourceDecl(stmt);
+            case 'interpret_cmd':
+                return this.execInterpretCmd(stmt);
+            case 'glossary_cmd':
+                return this.execGlossaryCmd(stmt);
+        }
+    }
+    executeStatementsIterative(statements, fallbackFile) {
+        const runtimeStack = [{ kind: 'statements', statements, index: 0 }];
+        while (runtimeStack.length > 0) {
+            if (this.returnSignal)
+                break;
+            const frame = runtimeStack[runtimeStack.length - 1];
+            if (frame.kind === 'statements') {
+                if (frame.index >= frame.statements.length) {
+                    runtimeStack.pop();
+                    continue;
+                }
+                const stmt = frame.statements[frame.index++];
+                try {
+                    this.dispatchRuntimeStatement(stmt, runtimeStack);
+                }
+                catch (e) {
+                    const message = e instanceof Error ? e.message : String(e);
+                    this.diagnostics.push({
+                        severity: this.isSafetyLimitMessage(message || '') ? 'warning' : 'error',
+                        message: message || 'Error de runtime',
+                        file: stmt.source.file || fallbackFile,
+                        line: stmt.source.line,
+                        column: stmt.source.column,
+                    });
+                }
+                continue;
+            }
+            if (frame.kind === 'for') {
+                if (this.returnSignal || frame.index >= frame.stmt.items.length) {
+                    this.restoreBindingSnapshot(frame.stmt.variable, frame.savedBinding);
+                    runtimeStack.pop();
+                    continue;
+                }
+                const resolved = this.evaluateFormulaValue(frame.stmt.items[frame.index]);
+                this.setBinding(frame.stmt.variable, resolved);
+                frame.index++;
+                runtimeStack.push({ kind: 'statements', statements: frame.stmt.body, index: 0 });
+                continue;
+            }
+            if (this.returnSignal) {
+                runtimeStack.pop();
+                continue;
+            }
+            const profile = this.requireProfile();
+            const maxIter = frame.stmt.maxIterations || 1000;
+            if (frame.iterations >= maxIter) {
+                this.diagnostics.push({
+                    severity: 'warning',
+                    message: `while: se alcanzó el límite de ${maxIter} iteraciones`,
+                    file: frame.stmt.source.file,
+                    line: frame.stmt.source.line,
+                    column: frame.stmt.source.column,
+                });
+                runtimeStack.pop();
+                continue;
+            }
+            const resolved = this.evaluateFormulaValue(frame.stmt.formula);
+            const matched = this.matchesRuntimeCondition(profile, frame.stmt.condition, resolved);
+            if (!matched) {
+                runtimeStack.pop();
+                continue;
+            }
+            frame.iterations++;
+            runtimeStack.push({ kind: 'statements', statements: frame.stmt.body, index: 0 });
+        }
+    }
+    dispatchRuntimeStatement(stmt, runtimeStack) {
+        if (this.returnSignal)
+            return;
+        this.tickRuntimeStep();
+        const directCall = this.getDirectFunctionCall(stmt);
+        if (directCall) {
+            const result = this.executeFnCall(directCall.call);
+            this.applyFunctionContinuation({ type: directCall.type, stmt: directCall.stmt }, result);
+            return;
+        }
+        if (this.isImporting) {
+            const sideEffects = [
+                'derive_cmd',
+                'check_valid_cmd',
+                'check_satisfiable_cmd',
+                'check_equivalent_cmd',
+                'prove_cmd',
+                'countermodel_cmd',
+                'truth_table_cmd',
+                'print_cmd',
+                'analyze_cmd',
+                'explain_cmd',
+                'render_cmd',
+            ];
+            if (sideEffects.includes(stmt.kind) || stmt.kind === 'logic_decl')
+                return;
+        }
+        switch (stmt.kind) {
+            case 'if_stmt': {
+                const selectedBody = this.selectIfBody(stmt);
+                if (selectedBody)
+                    runtimeStack.push({ kind: 'statements', statements: selectedBody, index: 0 });
+                return;
+            }
+            case 'for_stmt':
+                runtimeStack.push({
+                    kind: 'for',
+                    stmt,
+                    index: 0,
+                    savedBinding: this.captureBindingSnapshot(stmt.variable),
+                });
+                return;
+            case 'while_stmt':
+                runtimeStack.push({ kind: 'while', stmt, iterations: 0 });
+                return;
+            case 'logic_decl':
+                return this.execLogicDecl(stmt);
+            case 'axiom_decl':
+                return this.execAxiomDecl(stmt);
+            case 'theorem_decl':
+                return this.execTheoremDecl(stmt);
+            case 'derive_cmd':
+                return this.execDeriveCmd(stmt);
+            case 'check_valid_cmd':
+                return this.execCheckValidCmd(stmt);
+            case 'check_satisfiable_cmd':
+                return this.execCheckSatisfiableCmd(stmt);
+            case 'check_equivalent_cmd':
+                return this.execCheckEquivalentCmd(stmt);
+            case 'prove_cmd':
+                return this.execProveCmd(stmt);
+            case 'countermodel_cmd':
+                return this.execCountermodelCmd(stmt);
+            case 'truth_table_cmd':
+                return this.execTruthTableCmd(stmt);
+            case 'let_decl':
+                return this.execLetDecl(stmt);
+            case 'claim_decl':
+                return this.execClaimDecl(stmt);
+            case 'support_decl':
+                return this.execSupportDecl(stmt);
+            case 'confidence_decl':
+                return this.execConfidenceDecl(stmt);
+            case 'context_decl':
+                return this.execContextDecl(stmt);
+            case 'render_cmd':
+                return this.execRenderCmd(stmt);
+            case 'analyze_cmd':
+                return this.execAnalyzeCmd(stmt);
+            case 'explain_cmd':
+                return this.execExplainCmd(stmt);
+            case 'import_decl':
+                return this.execImportDecl(stmt);
+            case 'proof_block':
+                return this.execProofBlock(stmt);
+            case 'theory_decl':
+                return this.execTheoryDecl(stmt);
+            case 'print_cmd':
+                return this.execPrintCmd(stmt);
+            case 'set_cmd':
+                return this.execSetCmd(stmt);
+            case 'fn_decl':
+                return this.execFnDecl(stmt);
+            case 'return_stmt':
+                return this.execReturnStmt(stmt);
+            case 'fn_call':
+                this.executeFnCall(stmt);
+                return;
+            case 'export_decl':
+                return this.execExportDecl(stmt);
+            case 'define_decl':
+                return this.execDefineDecl(stmt);
+            case 'unfold_cmd':
+                return this.execUnfoldCmd(stmt);
+            case 'fold_cmd':
+                return this.execFoldCmd(stmt);
+            case 'source_decl':
+                return this.execSourceDecl(stmt);
+            case 'interpret_cmd':
+                return this.execInterpretCmd(stmt);
+            case 'glossary_cmd':
+                return this.execGlossaryCmd(stmt);
+        }
+    }
+    selectIfBody(stmt) {
+        const profile = this.requireProfile();
+        for (const branch of stmt.branches) {
+            const resolved = this.evaluateFormulaValue(branch.formula);
+            const matched = this.matchesRuntimeCondition(profile, branch.condition, resolved);
+            if (matched)
+                return branch.body;
+        }
+        return stmt.elseBranch;
+    }
+    matchesRuntimeCondition(profile, condition, formula) {
+        const runtimeTruthiness = this.getRuntimeTruthiness(formula);
+        if (runtimeTruthiness !== null) {
+            if (condition === 'valid' || condition === 'satisfiable')
+                return runtimeTruthiness;
+            return !runtimeTruthiness;
+        }
+        if (profile.name === 'arithmetic') {
+            const numeric = (0, arithmetic_1.evalNumeric)(formula);
+            const truthy = !Number.isNaN(numeric) && numeric !== 0;
+            if (condition === 'valid' || condition === 'satisfiable')
+                return truthy;
+            return !truthy;
+        }
+        if (condition === 'valid' || condition === 'invalid') {
+            const result = profile.checkValid(formula);
+            return condition === 'valid' ? result.status === 'valid' : result.status !== 'valid';
+        }
+        const result = profile.checkSatisfiable(formula);
+        return condition === 'satisfiable'
+            ? result.status === 'satisfiable' || result.status === 'valid'
+            : result.status === 'unsatisfiable';
+    }
+    getRuntimeTruthiness(formula) {
+        switch (formula.kind) {
+            case 'number':
+                return !Number.isNaN(formula.value ?? 0) && (formula.value ?? 0) !== 0;
+            case 'list':
+                return (formula.args?.length ?? 0) > 0;
+            case 'true':
+                return true;
+            case 'false':
+                return false;
+            default:
+                return null;
+        }
+    }
+    evaluateFormulaValue(formula) {
+        if (formula.kind === 'fn_call' && formula.name) {
+            const result = this.executeFnCall({ name: formula.name, args: formula.args || [] });
+            return result || { kind: 'atom', name: 'undefined', source: formula.source };
+        }
+        return this.resolveFormula(formula);
+    }
+    getDirectFunctionCall(stmt) {
+        if (stmt.kind === 'fn_call') {
+            return { call: { name: stmt.name, args: stmt.args }, type: 'discard' };
+        }
+        if (stmt.kind === 'let_decl' && stmt.letType === 'formula' && stmt.formula.kind === 'fn_call') {
+            return {
+                call: { name: stmt.formula.name || '', args: stmt.formula.args || [] },
+                type: 'let_decl',
+                stmt,
+            };
+        }
+        if (stmt.kind === 'set_cmd' && stmt.formula.kind === 'fn_call') {
+            return {
+                call: { name: stmt.formula.name || '', args: stmt.formula.args || [] },
+                type: 'set_cmd',
+                stmt,
+            };
+        }
+        if (stmt.kind === 'return_stmt' && stmt.formula?.kind === 'fn_call') {
+            return {
+                call: { name: stmt.formula.name || '', args: stmt.formula.args || [] },
+                type: 'return_stmt',
+                stmt,
+            };
+        }
+        if (stmt.kind === 'print_cmd' && stmt.formula?.kind === 'fn_call') {
+            return {
+                call: { name: stmt.formula.name || '', args: stmt.formula.args || [] },
+                type: 'print_cmd',
+                stmt,
+            };
+        }
+        return undefined;
+    }
+    applyFunctionContinuation(continuation, result) {
+        const normalized = result || { kind: 'atom', name: 'undefined' };
+        switch (continuation.type) {
+            case 'discard':
+                return;
+            case 'let_decl': {
+                const letStmt = continuation.stmt;
+                if (letStmt.letType === 'formula') {
+                    return this.execLetDecl({ ...letStmt, formula: normalized });
+                }
+                return;
+            }
+            case 'set_cmd':
+                return this.execSetCmd({ ...continuation.stmt, formula: normalized });
+            case 'return_stmt':
+                return this.execReturnStmt({
+                    ...continuation.stmt,
+                    formula: normalized,
+                });
+            case 'print_cmd':
+                return this.execPrintCmd({ ...continuation.stmt, formula: normalized });
+        }
+    }
+    execExportDecl(stmt) {
+        // Ejecutar la declaración interna
+        this.executeStatementsIterative([stmt.statement], stmt.source.file);
+        // Registrarla como exportada
+        const s = stmt.statement;
+        switch (s.kind) {
+            case 'let_decl':
+                if (s.letType === 'formula') {
+                    const binding = this.letBindings.get(s.name);
+                    const axiom = this.theory.axioms.get(s.name);
+                    if (binding)
+                        this.exportedBindings.set(s.name, binding);
+                    if (axiom)
+                        this.exportedAxioms.set(s.name, axiom);
+                }
+                break;
+            case 'axiom_decl':
+                if (this.theory.axioms.has(s.name)) {
+                    const ax = this.theory.axioms.get(s.name);
+                    if (ax)
+                        this.exportedAxioms.set(s.name, ax);
+                }
+                break;
+            case 'theorem_decl':
+                if (this.theory.theorems.has(s.name)) {
+                    const th = this.theory.theorems.get(s.name);
+                    if (th)
+                        this.exportedTheorems.set(s.name, th);
+                }
+                break;
+            case 'fn_decl':
+                if (this.functions.has(s.name)) {
+                    const fn = this.functions.get(s.name);
+                    if (fn)
+                        this.exportedFunctions.set(s.name, fn);
+                }
+                break;
+            case 'theory_decl':
+                if (this.theories.has(s.name)) {
+                    const thScope = this.theories.get(s.name);
+                    if (thScope)
+                        this.exportedTheories.set(s.name, thScope);
+                }
+                break;
+            case 'define_decl': {
+                const defEntry = this.definitions.get(s.name);
+                if (defEntry) {
+                    this.exportedBindings.set(s.name, defEntry.body);
+                }
+                break;
+            }
+        }
+    }
+    requireProfile() {
+        const p = this.profile;
+        if (!p) {
+            throw new Error('No se ha declarado un perfil logico. Use: logic <perfil>');
+        }
+        return p;
+    }
+    /**
+     * Construye una teoría efímera que combina axiomas + teoremas + letBindings
+     * SIN mutar la teoría persistente. Los letBindings quedan accesibles por nombre
+     * como si fueran axiomas, pero solo para esta llamada a derive/prove.
+     * Axiomas/teoremas reales tienen prioridad sobre letBindings con el mismo nombre.
+     */
+    buildEphemeralTheory() {
+        const axioms = new Map(this.theory.axioms);
+        for (const [name, formula] of this.letBindings) {
+            if (!axioms.has(name) && !this.theory.theorems.has(name)) {
+                axioms.set(name, formula);
+            }
+        }
+        return {
+            profile: this.theory.profile,
+            axioms,
+            theorems: this.theory.theorems,
+            claims: this.theory.claims,
+            judgments: this.theory.judgments,
+        };
+    }
+    /**
+     * Sustituye recursivamente los átomos que coincidan con variables `let`
+     * por sus fórmulas definidas. Detecta ciclos para evitar recursión infinita.
+     * Soporta notación con punto: Theory.member resuelve desde el scope de la teoría.
+     */
+    invalidateResolveCache() {
+        this.resolveCache = new WeakMap();
+        this.resolveCacheGeneration++;
+        this.fnMemoCache.clear();
+    }
+    resolveFormula(f, visited = new Set()) {
+        // Check resolution cache first
+        const cached = this.resolveCache.get(f);
+        if (cached !== undefined)
+            return cached;
+        const resolved = this.resolveFormulaRecursive(f, visited);
+        // Constant-fold pure arithmetic (add, subtract, etc.) but NOT comparisons
+        // so profiles can still see the structural form of comparisons.
+        const folded = this.tryConstantFold(resolved);
+        // Cache the result and deduplicate via FormulaFactory
+        const result = formula_factory_1.FormulaFactory.create(folded);
+        this.resolveCache.set(f, result);
+        return result;
+    }
+    resolveFormulaRecursive(f, visited) {
+        if (!f)
+            return f;
+        // Si es un átomo, intentar resolver
+        if (f.kind === 'atom' && f.name) {
+            if (this.hasBinding(f.name)) {
+                if (visited.has(f.name))
+                    return f;
+                visited.add(f.name);
+                const result = this.resolveFormulaRecursive(this.requireFormulaBinding(f.name), visited);
+                visited.delete(f.name);
+                return result;
+            }
+            // Dot notation: Theory.member o instance.member
+            if (f.name.includes('.')) {
+                const [prefix, memberName] = f.name.split('.', 2);
+                // 1. Intentar resolver el prefijo como una variable local (instancia)
+                if (this.hasBinding(prefix)) {
+                    const resolvedPrefix = this.requireFormulaBinding(prefix);
+                    if (resolvedPrefix.kind === 'atom' && resolvedPrefix.name) {
+                        const actualInstanceName = resolvedPrefix.name;
+                        const scope = this.theories.get(actualInstanceName);
+                        if (scope) {
+                            if (scope.privateMembers.has(memberName) &&
+                                this.currentTheoryName !== actualInstanceName)
+                                return f;
+                            const member = scope.letBindings.get(memberName) ??
+                                scope.axioms.get(memberName) ??
+                                scope.theorems.get(memberName);
+                            if (member) {
+                                return this.resolveFormulaRecursive(member, visited);
+                            }
+                        }
+                    }
+                }
+                // 2. Intentar resolver como nombre de teoría global (Singleton)
+                const scope = this.theories.get(prefix);
+                if (scope) {
+                    if (scope.privateMembers.has(memberName) && this.currentTheoryName !== prefix)
+                        return f;
+                    const member = scope.letBindings.get(memberName) ??
+                        scope.axioms.get(memberName) ??
+                        scope.theorems.get(memberName);
+                    if (member) {
+                        return this.resolveFormulaRecursive(member, visited);
+                    }
+                }
+                return f;
+            }
+            // También resolver axiomas/teoremas del theory actual por nombre
+            if (this.theory.axioms.has(f.name)) {
+                if (visited.has(f.name))
+                    return f;
+                visited.add(f.name);
+                const axVal = this.theory.axioms.get(f.name);
+                if (!axVal)
+                    return f;
+                const result = this.resolveFormulaRecursive(axVal, visited);
+                visited.delete(f.name);
+                return result;
+            }
+            if (this.theory.theorems.has(f.name)) {
+                if (visited.has(f.name))
+                    return f;
+                visited.add(f.name);
+                const thVal = this.theory.theorems.get(f.name);
+                if (!thVal)
+                    return f;
+                const result = this.resolveFormulaRecursive(thVal, visited);
+                visited.delete(f.name);
+                return result;
+            }
+            // v3: Expand definitions (no-param definitions referenced as atoms)
+            const def = this.definitions.get(f.name);
+            if (def && (!def.params || def.params.length === 0)) {
+                if (visited.has(f.name))
+                    return f;
+                visited.add(f.name);
+                const result = this.resolveFormulaRecursive(def.body, visited);
+                visited.delete(f.name);
+                return result;
+            }
+        }
+        // v3: Expand parametric definitions used as predicates: F(a, b)
+        if (f.kind === 'predicate' && f.name) {
+            const def = this.definitions.get(f.name);
+            if (def && def.params && def.params.length > 0) {
+                // Predicates store arguments as params (string[]) or args (Formula[])
+                let argFormulas;
+                if (f.args && f.args.length > 0) {
+                    argFormulas = f.args.map((a) => (a ? this.resolveFormulaRecursive(a, visited) : a));
+                }
+                else {
+                    argFormulas = (f.params ?? []).map((p) => ({ kind: 'atom', name: p, source: f.source }));
+                }
+                const expanded = this.substituteParams(def.body, def.params, argFormulas);
+                return this.resolveFormulaRecursive(expanded, visited);
+            }
+        }
+        // Llamada a función como expresión
+        if (f.kind === 'fn_call' && f.name) {
+            const result = this.executeFnCall({ name: f.name, args: f.args || [] });
+            return result || { kind: 'atom', name: 'undefined', source: f.source };
+        }
+        // Recorrer hijos recursivamente
+        if (f.args && f.args.length > 0) {
+            const newArgs = f.args.map((a) => (a ? this.resolveFormulaRecursive(a, visited) : a));
+            // Check if args actually changed to avoid unnecessary object creation
+            let changed = false;
+            for (let i = 0; i < f.args.length; i++) {
+                if (f.args[i] !== newArgs[i]) {
+                    changed = true;
+                    break;
+                }
+            }
+            return changed ? { ...f, args: newArgs } : f;
+        }
+        return f;
+    }
+    execLogicDecl(stmt) {
+        const p = interface_1.registry.get(stmt.profile);
+        if (!p) {
+            throw new Error(`Perfil logico desconocido: '${stmt.profile}'. Disponibles: ${interface_1.registry.list().join(', ')}`);
+        }
+        this.profile = p;
+        this.theory.profile = stmt.profile;
+        // Clear memoization cache to avoid stale results from prior profile
+        this.fnMemoCache.clear();
+        this.emit(`Perfil logico: ${stmt.profile}`);
+    }
+    execAxiomDecl(stmt) {
+        const profile = this.requireProfile();
+        const resolved = this.resolveFormula(stmt.formula);
+        const diags = profile.checkWellFormed(resolved);
+        this.diagnostics.push(...diags);
+        this.theory.axioms.set(stmt.name, resolved);
+        this.invalidateResolveCache();
+        this.emit(`Axioma ${stmt.name} = ${(0, propositional_1.formulaToString)(resolved)}`);
+    }
+    execTheoremDecl(stmt) {
+        const profile = this.requireProfile();
+        const resolved = this.resolveFormula(stmt.formula);
+        const diags = profile.checkWellFormed(resolved);
+        this.diagnostics.push(...diags);
+        this.theory.theorems.set(stmt.name, resolved);
+        this.invalidateResolveCache();
+        this.emit(`Teorema ${stmt.name} = ${(0, propositional_1.formulaToString)(resolved)}`);
+    }
+    execDeriveCmd(stmt) {
+        const profile = this.requireProfile();
+        const resolved = this.resolveFormula(stmt.goal);
+        // Warn about non-existent premises (check name, let bindings, and formula-value match)
+        for (const name of stmt.premises) {
+            if (this.theory.axioms.has(name) ||
+                this.theory.theorems.has(name) ||
+                this.letBindings.has(name)) {
+                continue;
+            }
+            // Check if any axiom/theorem has this as its formula atom name
+            let foundByFormula = false;
+            for (const [, formula] of this.theory.axioms) {
+                if (formula.kind === 'atom' && formula.name === name) {
+                    foundByFormula = true;
+                    break;
+                }
+            }
+            if (!foundByFormula) {
+                for (const [, formula] of this.theory.theorems) {
+                    if (formula.kind === 'atom' && formula.name === name) {
+                        foundByFormula = true;
+                        break;
+                    }
+                }
+            }
+            if (!foundByFormula) {
+                this.diagnostics.push({
+                    severity: 'warning',
+                    message: `Premisa '${name}' no encontrada en la teoría actual`,
+                    file: stmt.source.file,
+                    line: stmt.source.line,
+                    column: stmt.source.column,
+                });
+            }
+        }
+        const result = profile.derive(resolved, stmt.premises, this.buildEphemeralTheory());
+        this.results.push(result);
+        this.emitResult('derive', result);
+        // Auto-register successful derivations as theorems so they can be reused.
+        // Skip semantic-only proofs: they validate entailment without producing a
+        // syntactic derivation, so registering them as theorems would hide the gap.
+        if ((result.status === 'valid' || result.status === 'provable') &&
+            result.proof?.method !== 'semantic') {
+            const theoremName = `derived_${this.theory.theorems.size + 1}`;
+            this.theory.theorems.set(theoremName, resolved);
+        }
+    }
+    execCheckValidCmd(stmt) {
+        const profile = this.requireProfile();
+        const resolved = this.resolveFormula(stmt.formula);
+        const result = profile.checkValid(resolved);
+        this.results.push(result);
+        this.emitResult('check valid', result);
+    }
+    execCheckSatisfiableCmd(stmt) {
+        const profile = this.requireProfile();
+        const resolved = this.resolveFormula(stmt.formula);
+        const result = profile.checkSatisfiable(resolved);
+        this.results.push(result);
+        this.emitResult('check satisfiable', result);
+    }
+    execCheckEquivalentCmd(stmt) {
+        const profile = this.requireProfile();
+        if (!profile.checkEquivalent) {
+            throw new Error('Este perfil no soporta check equivalent');
+        }
+        const resolvedL = this.resolveFormula(stmt.left);
+        const resolvedR = this.resolveFormula(stmt.right);
+        const result = profile.checkEquivalent(resolvedL, resolvedR);
+        this.results.push(result);
+        this.emitResult('check equivalent', result);
+    }
+    execProveCmd(stmt) {
+        const profile = this.requireProfile();
+        const resolved = this.resolveFormula(stmt.goal);
+        const result = profile.prove(resolved, this.buildEphemeralTheory(), stmt.premises);
+        this.results.push(result);
+        this.emitResult('prove', result);
+    }
+    execCountermodelCmd(stmt) {
+        const profile = this.requireProfile();
+        const resolved = this.resolveFormula(stmt.formula);
+        const result = profile.countermodel(resolved);
+        this.results.push(result);
+        this.emitResult('countermodel', result);
+    }
+    execTruthTableCmd(stmt) {
+        const profile = this.requireProfile();
+        const formula = this.resolveFormula(stmt.formula);
+        if (profile.name === 'classical.propositional') {
+            const atoms = Array.from((0, propositional_1.collectAtoms)(formula)).sort();
+            const MAX_STREAMING_TRUTH_TABLE_ATOMS = 20;
+            if (atoms.length > MAX_STREAMING_TRUTH_TABLE_ATOMS) {
+                throw new Error(`truth_table soporta hasta ${MAX_STREAMING_TRUTH_TABLE_ATOMS} variables en lógica clásica proposicional`);
+            }
+            // Streaming de tabla de verdad para evitar OOM
+            this.emit(`Tabla de verdad para ${(0, propositional_1.formulaToString)(formula)}:`);
+            this.emit(`  ${atoms.join(' | ')} | Resultado`);
+            this.emit(`  ${atoms.map(() => '---').join('-|-')}-|----------`);
+            let isTautology = true;
+            let isSatisfiable = false;
+            let count = 0;
+            let satCount = 0;
+            // Accumulate rows for graphic view (cap at 512 to avoid OOM on huge tables)
+            const MAX_GRAPHIC_ROWS = 512;
+            const rows = [];
+            for (const v of (0, propositional_1.generateValuationsLazy)(atoms)) {
+                const res = (0, propositional_1.evaluateClassical)(formula, v);
+                if (res) {
+                    isSatisfiable = true;
+                    satCount++;
+                }
+                else {
+                    isTautology = false;
+                }
+                count++;
+                // Accumulate rows for the graphic table (capped)
+                if (count <= MAX_GRAPHIC_ROWS) {
+                    rows.push({ valuation: { ...v }, result: res });
+                }
+                // Solo imprimir las primeras 64 filas para no saturar el stdout en tablas masivas
+                if (count <= 64) {
+                    const row = atoms.map((a) => (v[a] ? 'V' : 'F')).join(' | ');
+                    this.emit(`  ${row} | ${res ? 'V' : 'F'}`);
+                }
+                else if (count === 65) {
+                    this.emit('  ... (tabla masiva, ocultando filas intermedias) ...');
+                }
+            }
+            this.emit(`\nResumen: ${count} valuaciones analizadas.`);
+            this.emit(`Estatus: ${isTautology ? 'Tautología ✓' : isSatisfiable ? 'Satisfacible' : 'Contradicción ✗'}`);
+            this.results.push({
+                status: isTautology ? 'valid' : isSatisfiable ? 'satisfiable' : 'unsatisfiable',
+                output: `Tabla de verdad de ${count} filas procesada.`,
+                truthTable: {
+                    variables: atoms,
+                    rows,
+                    subFormulas: [],
+                    subFormulaValues: [],
+                    isTautology,
+                    isContradiction: !isSatisfiable,
+                    isSatisfiable,
+                    satisfyingCount: satCount,
+                    totalCount: count,
+                },
+                diagnostics: [],
+                formula: formula,
+            });
+            return;
+        }
+        // Fallback para otros perfiles
+        if (!profile.truthTable) {
+            throw new Error('Este perfil no soporta truth_table');
+        }
+        const tt = profile.truthTable(formula);
+        const result = {
+            status: tt.isTautology ? 'valid' : tt.isSatisfiable ? 'satisfiable' : 'unsatisfiable',
+            output: this.formatTruthTable(formula, tt),
+            truthTable: tt,
+            diagnostics: [],
+            formula: formula,
+        };
+        this.results.push(result);
+        if (result.output)
+            this.emit(result.output);
+    }
+    execLetDecl(stmt) {
+        if (stmt.letType === 'passage') {
+            const diags = (0, compiler_1.registerPassage)(this.textLayer, stmt.name, stmt.anchorPath);
+            this.diagnostics.push(...diags);
+            this.emit(`Passage ${stmt.name} = [[${stmt.anchorPath}]]`);
+        }
+        else if (stmt.letType === 'formalize' && stmt.passageName && stmt.formula) {
+            const formula = stmt.formula;
+            const diags = (0, compiler_1.registerFormalization)(this.textLayer, stmt.name, stmt.passageName, formula);
+            this.diagnostics.push(...diags);
+            this.emit(`Formalizacion ${stmt.name}: ${stmt.passageName} -> ${(0, propositional_1.formulaToString)(formula)}`);
+        }
+        else if (stmt.letType === 'description') {
+            if (this.currentBindingFrame)
+                this.currentBindingFrame.descriptions.set(stmt.name, stmt.description);
+            else
+                this.letDescriptions.set(stmt.name, stmt.description);
+            if (this.shouldEmitLocalBindings())
+                this.emit(`Let ${stmt.name} = "${stmt.description}"`);
+        }
+        else if (stmt.letType === 'action') {
+            const captured = this.executeActionExpr(stmt.action);
+            this.results.push(captured.result);
+            this.bindCapturedAction(stmt.name, stmt.action.action, captured.primary, captured.result, captured.formulas, captured.extraBindings);
+            if (this.shouldEmitLocalBindings()) {
+                this.emit(`Let ${stmt.name} = ${(0, format_1.formulaToUnicode)(captured.primary)}`);
+            }
+        }
+        else if (stmt.letType === 'formula' && stmt.formula) {
+            // Resolve bindings but preserve symbolic structure (no constant-folding)
+            const resolved = this.resolveFormulaRecursive(stmt.formula, new Set());
+            this.defineBinding(stmt.name, resolved, 'description' in stmt ? stmt.description : undefined);
+            // Note: `let` es un alias semántico, no un axioma.
+            // Se mantiene accesible como premisa por nombre vía letBindings (ver execDeriveCmd).
+            if ('description' in stmt && stmt.description) {
+                if (!this.currentBindingFrame)
+                    this.letDescriptions.set(stmt.name, stmt.description);
+                if (this.shouldEmitLocalBindings())
+                    this.emit(`Let ${stmt.name} = "${stmt.description}" : ${(0, format_1.formulaToUnicode)(resolved)}`);
+            }
+            else {
+                if (this.shouldEmitLocalBindings())
+                    this.emit(`Let ${stmt.name} = ${(0, format_1.formulaToUnicode)(resolved)}`);
+            }
+        }
+    }
+    execClaimDecl(stmt) {
+        const formula = stmt.formula;
+        const formalization = stmt.formalization;
+        const diags = (0, compiler_1.registerClaim)(this.textLayer, stmt.name, formula, formalization);
+        this.diagnostics.push(...diags);
+        const claim = {
+            name: stmt.name,
+            formula: formula,
+            formalization: formalization,
+        };
+        this.theory.claims.set(stmt.name, claim);
+        this.emit(`Claim ${stmt.name} registrado`);
+    }
+    execSupportDecl(stmt) {
+        const diags = (0, compiler_1.registerSupport)(this.textLayer, stmt.claimName, stmt.sourceName);
+        this.diagnostics.push(...diags);
+        this.emit(`Support: ${stmt.claimName} <- ${stmt.sourceName}`);
+    }
+    execConfidenceDecl(stmt) {
+        const diags = (0, compiler_1.registerConfidence)(this.textLayer, stmt.claimName, stmt.value);
+        this.diagnostics.push(...diags);
+        this.emit(`Confidence: ${stmt.claimName} = ${stmt.value}`);
+    }
+    execContextDecl(stmt) {
+        const diags = (0, compiler_1.registerContext)(this.textLayer, stmt.claimName, stmt.text);
+        this.diagnostics.push(...diags);
+        this.emit(`Context: ${stmt.claimName} = "${stmt.text}"`);
+    }
+    execRenderCmd(stmt) {
+        const diags = (0, compiler_1.compileClaimsToTheory)(this.textLayer, this.theory);
+        this.diagnostics.push(...diags);
+        if (stmt.target === 'glossary') {
+            return this.renderGlossary(stmt.format);
+        }
+        if (stmt.target === 'analysis') {
+            return this.renderAnalysis(stmt.format);
+        }
+        if (stmt.target === 'claims' || stmt.target === 'all') {
+            this.emit(`── Render: ${stmt.target} (${stmt.format}) ──`);
+            for (const [name, claim] of this.theory.claims) {
+                const fStr = claim.formula ? (0, format_1.formulaToUnicode)(claim.formula) : '(sin fórmula)';
+                this.emit(`  Claim "${name}": ${fStr}`);
+                if (claim.support)
+                    this.emit(`    Soporte: ${claim.support}`);
+                if (claim.confidence !== undefined)
+                    this.emit(`    Confianza: ${claim.confidence}`);
+                if (claim.context)
+                    this.emit(`    Contexto: ${claim.context}`);
+            }
+            if (this.theory.claims.size === 0)
+                this.emit('  (sin claims registrados)');
+        }
+        else if (stmt.target === 'theory') {
+            this.emit(`── Render: theory (${stmt.format}) ──`);
+            this.emit(`  Perfil: ${this.theory.profile || '(ninguno)'}`);
+            this.emit(`  Axiomas: ${this.theory.axioms.size}`);
+            for (const [name, formula] of this.theory.axioms) {
+                this.emit(`    ${name} = ${(0, format_1.formulaToUnicode)(formula)}`);
+            }
+            this.emit(`  Teoremas: ${this.theory.theorems.size}`);
+            for (const [name, formula] of this.theory.theorems) {
+                this.emit(`    ${name} = ${(0, format_1.formulaToUnicode)(formula)}`);
+            }
+            this.emit(`  Claims: ${this.theory.claims.size}`);
+        }
+        else {
+            const axiom = this.theory.axioms.get(stmt.target);
+            if (axiom) {
+                this.emit(`  ${stmt.target} = ${(0, format_1.formulaToUnicode)(axiom)}`);
+                return;
+            }
+            const claim = this.theory.claims.get(stmt.target);
+            if (claim) {
+                const fStr = claim.formula ? (0, format_1.formulaToUnicode)(claim.formula) : '(sin fórmula)';
+                this.emit(`  Claim "${stmt.target}": ${fStr}`);
+                return;
+            }
+            this.emit(`Render: ${stmt.target} (${stmt.format})`);
+        }
+    }
+    /** Render glossary in the specified format */
+    renderGlossary(format) {
+        if (format === 'json') {
+            const obj = {};
+            for (const [name, def] of this.definitions) {
+                obj[name] = {
+                    params: def.params ?? [],
+                    body: (0, propositional_1.formulaToString)(def.body),
+                    description: def.description ?? null,
+                };
+            }
+            this.emit(JSON.stringify(obj, null, 2));
+            return;
+        }
+        // markdown or default
+        if (this.definitions.size === 0) {
+            this.emit('(sin definiciones)');
+            return;
+        }
+        for (const [name, def] of this.definitions) {
+            const paramsStr = def.params?.length ? `(${def.params.join(', ')})` : '';
+            const bodyStr = format === 'latex' ? (0, format_1.formulaToLaTeX)(def.body) : (0, format_1.formulaToUnicode)(def.body);
+            if (format === 'latex') {
+                this.emit(`\\newcommand{\\${name}}{${bodyStr}} % ${def.description ?? ''}`);
+            }
+            else {
+                this.emit(`- **${name}${paramsStr}** := ${bodyStr}`);
+                if (def.description)
+                    this.emit(`  > ${def.description}`);
+            }
+        }
+    }
+    /** Render full analysis document */
+    renderAnalysis(format) {
+        const isLatex = format === 'latex';
+        const heading = (level, text) => {
+            if (isLatex)
+                return `${'\\'.repeat(1)}${'sub'.repeat(level - 1)}section{${text}}`;
+            return `${'#'.repeat(level)} ${text}`;
+        };
+        this.emit(heading(1, 'Análisis'));
+        this.emit('');
+        // Sources
+        if (this.sources.size > 0) {
+            this.emit(heading(2, 'Fuentes'));
+            for (const [, src] of this.sources) {
+                const yearStr = src.year ? ` (${src.year})` : '';
+                this.emit(`- ${src.author ?? ''}${yearStr} *${src.work ?? ''}*`);
+            }
+            this.emit('');
+        }
+        // Definitions
+        if (this.definitions.size > 0) {
+            this.emit(heading(2, 'Definiciones'));
+            this.renderGlossary(format);
+            this.emit('');
+        }
+        // Axioms
+        if (this.theory.axioms.size > 0) {
+            this.emit(heading(2, 'Axiomas'));
+            for (const [name, formula] of this.theory.axioms) {
+                this.emit(`- **${name}**: ${(0, format_1.formulaToUnicode)(formula)}`);
+            }
+            this.emit('');
+        }
+        // Theorems
+        if (this.theory.theorems.size > 0) {
+            this.emit(heading(2, 'Teoremas'));
+            for (const [name, formula] of this.theory.theorems) {
+                this.emit(`- **${name}**: ${(0, format_1.formulaToUnicode)(formula)}`);
+            }
+            this.emit('');
+        }
+        // Claims
+        if (this.theory.claims.size > 0) {
+            this.emit(heading(2, 'Claims'));
+            for (const [name, claim] of this.theory.claims) {
+                const fStr = claim.formula ? (0, format_1.formulaToUnicode)(claim.formula) : '(sin fórmula)';
+                this.emit(`- **${name}**: ${fStr}`);
+            }
+            this.emit('');
+        }
+        // Results summary
+        if (this.results.length > 0) {
+            this.emit(heading(2, 'Verificaciones'));
+            for (const r of this.results) {
+                const status = r.status === 'valid' ? '✓' : r.status === 'satisfiable' ? '~' : '✗';
+                const fStr = r.formula ? (0, format_1.formulaToUnicode)(r.formula) : '';
+                this.emit(`- ${fStr}: ${r.status} ${status}`);
+            }
+        }
+    }
+    execAnalyzeCmd(stmt) {
+        const profile = this.requireProfile();
+        const premises = stmt.premises.map((p) => this.resolveFormula(p));
+        const conclusion = this.resolveFormula(stmt.conclusion);
+        const fallacies = (0, fallacies_1.detectFallacies)(premises, conclusion, profile);
+        const pStr = premises.map((p) => (0, format_1.formulaToUnicode)(p)).join(', ');
+        const cStr = (0, format_1.formulaToUnicode)(conclusion);
+        if (fallacies.length === 0) {
+            const conj = premises.length === 0
+                ? conclusion
+                : premises.length === 1
+                    ? premises[0]
+                    : premises.reduce((a, b) => ({ kind: 'and', args: [a, b] }), premises[0]);
+            const impl = premises.length === 0 ? conclusion : { kind: 'implies', args: [conj, conclusion] };
+            const result = profile.checkValid(impl);
+            if (result.status === 'valid') {
+                this.emit(`✓ [analyze] {${pStr}} → ${cStr}`);
+                this.emit('  Inferencia VÁLIDA — no se detectaron falacias');
+            }
+            else {
+                this.emit(`⚠ [analyze] {${pStr}} → ${cStr}`);
+                this.emit('  Inferencia NO VÁLIDA — pero no corresponde a un patrón de falacia conocido');
+            }
+            this.results.push({
+                status: result.status,
+                output: result.output,
+                diagnostics: [],
+                formula: conclusion,
+            });
+        }
+        else {
+            this.emit(`⚠ [analyze] {${pStr}} → ${cStr}`);
+            for (const f of fallacies) {
+                this.emit(`  ⚠ Falacia detectada: ${f.name}`);
+                this.emit(`    ${f.description}`);
+                if (f.pattern)
+                    this.emit(`    Patrón: ${f.pattern}`);
+            }
+            this.results.push({
+                status: 'invalid',
+                output: `Falacias detectadas: ${fallacies.map((f) => f.name).join(', ')}`,
+                diagnostics: fallacies.map((f) => ({
+                    severity: 'warning',
+                    message: `Falacia: ${f.name} — ${f.description}`,
+                })),
+                formula: conclusion,
+            });
+        }
+    }
+    execProofBlock(stmt) {
+        const profile = this.requireProfile();
+        const savedAxioms = new Map(this.theory.axioms);
+        const savedTheorems = new Map(this.theory.theorems);
+        const savedLetBindings = new Map(this.letBindings);
+        const savedLetDescriptions = new Map(this.letDescriptions);
+        this.emit('── Proof Block ──');
+        for (const assumption of stmt.assumptions) {
+            const resolved = this.resolveFormula(assumption.formula);
+            this.theory.axioms.set(assumption.name, resolved);
+            this.emit(`  assume ${assumption.name} = ${(0, format_1.formulaToUnicode)(resolved)}`);
+        }
+        const resolvedGoal = this.resolveFormula(stmt.goal);
+        this.emit(`  show ${(0, format_1.formulaToUnicode)(resolvedGoal)}`);
+        this.executeStatementsIterative(stmt.body, stmt.source.file);
+        // Include ALL axioms and theorems available in the theory (external + assumptions + body results)
+        const premiseNames = Array.from(new Set([
+            ...Array.from(this.theory.axioms.keys()),
+            ...Array.from(this.theory.theorems.keys()),
+        ]));
+        const result = profile.derive(resolvedGoal, premiseNames, this.theory);
+        this.results.push(result);
+        const succeeded = result.status === 'valid' || result.status === 'provable';
+        let theoremPayload;
+        if (succeeded) {
+            this.emit(`  ✓ QED — ${(0, format_1.formulaToUnicode)(resolvedGoal)} demostrado`);
+            // Build implication from resolved assumption formulas so bindings are captured
+            let implication = resolvedGoal;
+            for (let i = stmt.assumptions.length - 1; i >= 0; i--) {
+                const assumedResolved = this.resolveFormula(stmt.assumptions[i].formula);
+                implication = { kind: 'implies', args: [assumedResolved, implication] };
+            }
+            const theoremName = `proof_${savedTheorems.size + 1}`;
+            theoremPayload = { name: theoremName, formula: implication };
+        }
+        else {
+            this.emit(`  ✗ QED fallido — no se pudo demostrar ${(0, format_1.formulaToUnicode)(resolvedGoal)}`);
+        }
+        // Restore full theory state — proof blocks must be hypothetical
+        this.theory.axioms = savedAxioms;
+        this.theory.theorems = savedTheorems;
+        this.letBindings = savedLetBindings;
+        this.letDescriptions = savedLetDescriptions;
+        // Only the resulting implication (if any) survives the block
+        if (theoremPayload) {
+            this.theory.theorems.set(theoremPayload.name, theoremPayload.formula);
+        }
+        this.invalidateResolveCache();
+        this.emit('── End Proof Block ──');
+    }
+    execTheoryDecl(stmt) {
+        if (stmt.params && stmt.params.length > 0) {
+            this.theoryTemplates.set(stmt.name, { node: stmt, parent: stmt.parent });
+            this.emit(`Teoría (plantilla) ${stmt.name}(${stmt.params.join(', ')}) declarada`);
+            return;
+        }
+        this.instantiateTheory(stmt);
+    }
+    instantiateTheory(node, instanceName, args = []) {
+        const theoryName = instanceName || node.name;
+        const scope = {
+            name: theoryName,
+            parent: node.parent,
+            letBindings: new Map(),
+            letDescriptions: new Map(),
+            axioms: new Map(),
+            theorems: new Map(),
+            privateMembers: new Set(),
+        };
+        if (node.parent) {
+            const parentScope = this.theories.get(node.parent);
+            if (!parentScope)
+                throw new Error(`Teoría padre '${node.parent}' no encontrada.`);
+            for (const [k, v] of parentScope.letBindings)
+                if (!parentScope.privateMembers.has(k))
+                    scope.letBindings.set(k, v);
+            for (const [k, v] of parentScope.letDescriptions)
+                if (!parentScope.privateMembers.has(k))
+                    scope.letDescriptions.set(k, v);
+            for (const [k, v] of parentScope.axioms)
+                if (!parentScope.privateMembers.has(k))
+                    scope.axioms.set(k, v);
+            for (const [k, v] of parentScope.theorems)
+                if (!parentScope.privateMembers.has(k))
+                    scope.theorems.set(k, v);
+        }
+        const savedLetBindings = new Map(this.letBindings);
+        const savedLetDescriptions = new Map(this.letDescriptions);
+        const savedAxioms = new Map(this.theory.axioms);
+        const savedTheorems = new Map(this.theory.theorems);
+        const savedTheoryName = this.currentTheoryName;
+        if (node.params && args.length > 0) {
+            for (let i = 0; i < node.params.length; i++) {
+                if (i < args.length) {
+                    const resolvedArg = this.resolveFormula(args[i]);
+                    this.letBindings.set(node.params[i], resolvedArg);
+                    scope.letBindings.set(node.params[i], resolvedArg);
+                }
+            }
+        }
+        for (const [k, v] of scope.letBindings)
+            this.letBindings.set(k, v);
+        for (const [k, v] of scope.letDescriptions)
+            this.letDescriptions.set(k, v);
+        for (const [k, v] of scope.axioms)
+            this.theory.axioms.set(k, v);
+        for (const [k, v] of scope.theorems)
+            this.theory.theorems.set(k, v);
+        this.currentTheoryName = theoryName;
+        this.emit(`── Instanciando Theory ${theoryName} ──`);
+        for (const member of node.members) {
+            const memberStmt = member.statement;
+            const memberName = 'name' in memberStmt ? memberStmt.name : null;
+            if (member.visibility === 'private' && memberName)
+                scope.privateMembers.add(memberName);
+            try {
+                this.executeStatement(memberStmt);
+            }
+            catch (e) {
+                const message = e instanceof Error ? e.message : String(e);
+                this.diagnostics.push({
+                    severity: 'error',
+                    message: `[theory ${theoryName}] ${message}`,
+                    file: node.source.file,
+                    line: memberStmt.source.line,
+                    column: memberStmt.source.column,
+                });
+            }
+        }
+        for (const [k, v] of this.letBindings)
+            if (!savedLetBindings.has(k))
+                scope.letBindings.set(k, v);
+        for (const [k, v] of this.letDescriptions)
+            if (!savedLetDescriptions.has(k))
+                scope.letDescriptions.set(k, v);
+        for (const [k, v] of this.theory.axioms)
+            if (!savedAxioms.has(k))
+                scope.axioms.set(k, v);
+        for (const [k, v] of this.theory.theorems)
+            if (!savedTheorems.has(k))
+                scope.theorems.set(k, v);
+        this.letBindings = savedLetBindings;
+        this.letDescriptions = savedLetDescriptions;
+        this.theory.axioms = savedAxioms;
+        this.theory.theorems = savedTheorems;
+        this.currentTheoryName = savedTheoryName;
+        this.invalidateResolveCache();
+        this.theories.set(theoryName, scope);
+        this.emit(`── End Theory Instance ${theoryName} ──`);
+        return theoryName;
+    }
+    execPrintCmd(stmt) {
+        if (stmt.value !== null)
+            this.emit(stmt.value);
+        else if (stmt.formula) {
+            // Resolve bindings but skip constant-folding so print shows symbolic form
+            const resolved = this.resolveFormulaRecursive(stmt.formula, new Set());
+            this.emit((0, format_1.formulaToUnicode)(resolved));
+        }
+    }
+    execSetCmd(stmt) {
+        const resolved = this.evaluateFormulaValue(stmt.formula);
+        this.setBinding(stmt.name, resolved);
+        if (!this.currentBindingFrame)
+            this.theory.axioms.set(stmt.name, resolved);
+        if (this.shouldEmitLocalBindings())
+            this.emit(`Set ${stmt.name} = ${(0, format_1.formulaToUnicode)(resolved)}`);
+    }
+    execIfStmt(stmt) {
+        const selectedBody = this.selectIfBody(stmt);
+        if (selectedBody)
+            this.executeStatementsIterative(selectedBody, stmt.source.file);
+    }
+    execForStmt(stmt) {
+        this.executeStatementsIterative([stmt], stmt.source.file);
+    }
+    execWhileStmt(stmt) {
+        this.executeStatementsIterative([stmt], stmt.source.file);
+    }
+    execFnDecl(stmt) {
+        const name = this.currentTheoryName ? `${this.currentTheoryName}.${stmt.name}` : stmt.name;
+        this.functions.set(name, stmt);
+        if (this.currentTheoryName)
+            this.emit(`Función de instancia ${name}(${stmt.params.join(', ')}) declarada`);
+        else
+            this.emit(`Función ${name}(${stmt.params.join(', ')}) declarada`);
+    }
+    execReturnStmt(stmt) {
+        if (stmt.formula)
+            this.returnValue = this.evaluateFormulaValue(stmt.formula);
+        else
+            this.returnValue = undefined;
+        this.returnSignal = true;
+    }
+    // ── v3: Definitions, sources, glossary ──────────────────────────
+    execDefineDecl(stmt) {
+        // Check for circular definitions
+        this.checkCircularDefinition(stmt.name, stmt.body, new Set());
+        const entry = {
+            name: stmt.name,
+            params: stmt.params,
+            body: stmt.body,
+            description: stmt.description,
+        };
+        this.definitions.set(stmt.name, entry);
+        const diags = (0, compiler_1.registerDefinition)(this.textLayer, entry);
+        this.diagnostics.push(...diags);
+        this.invalidateResolveCache();
+        const paramsStr = stmt.params?.length ? `(${stmt.params.join(', ')})` : '';
+        const bodyStr = (0, format_1.formulaToUnicode)(stmt.body);
+        this.emit(`Define ${stmt.name}${paramsStr} := ${bodyStr}`);
+        if (stmt.description) {
+            this.emit(`  → "${stmt.description}"`);
+        }
+    }
+    /** Detect circular definitions (A := ... A ...) */
+    checkCircularDefinition(name, body, visited) {
+        if (!body)
+            return;
+        if (body.kind === 'atom' && body.name) {
+            if (body.name === name) {
+                throw new Error(`Definición circular detectada: '${name}' se refiere a sí mismo`);
+            }
+            if (visited.has(body.name))
+                return;
+            visited.add(body.name);
+            const dep = this.definitions.get(body.name);
+            if (dep) {
+                this.checkCircularDefinition(name, dep.body, visited);
+            }
+        }
+        if (body.args) {
+            for (const arg of body.args) {
+                if (arg)
+                    this.checkCircularDefinition(name, arg, visited);
+            }
+        }
+    }
+    /** Expand a definition by name with given arguments */
+    expandDefinition(name, args) {
+        const def = this.definitions.get(name);
+        if (!def)
+            return null;
+        // If definition has no params, return body directly
+        if (!def.params || def.params.length === 0) {
+            return def.body;
+        }
+        // Substitute params with args
+        const actualArgs = args ?? [];
+        return this.substituteParams(def.body, def.params, actualArgs);
+    }
+    /** Recursively substitute parameter names with actual argument formulas */
+    substituteParams(formula, params, args) {
+        if (!formula)
+            return formula;
+        if (formula.kind === 'atom' && formula.name) {
+            const idx = params.indexOf(formula.name);
+            if (idx >= 0 && idx < args.length) {
+                return args[idx];
+            }
+            return formula;
+        }
+        if (formula.args && formula.args.length > 0) {
+            const newArgs = formula.args.map((a) => (a ? this.substituteParams(a, params, args) : a));
+            let changed = false;
+            for (let i = 0; i < formula.args.length; i++) {
+                if (formula.args[i] !== newArgs[i]) {
+                    changed = true;
+                    break;
+                }
+            }
+            return changed ? { ...formula, args: newArgs } : formula;
+        }
+        return formula;
+    }
+    /** Expand all definitions in a formula (one level) */
+    expandDefinitionsInFormula(f) {
+        if (!f)
+            return f;
+        // If atom matches a definition name (no params), expand it
+        if (f.kind === 'atom' && f.name) {
+            const expanded = this.expandDefinition(f.name);
+            if (expanded)
+                return expanded;
+        }
+        // If it's a predicate-like call (name with args), try to expand parametric definition
+        if (f.kind === 'predicate' && f.name) {
+            const def = this.definitions.get(f.name);
+            if (def && def.params && def.params.length > 0 && f.args) {
+                const expanded = this.expandDefinition(f.name, f.args);
+                if (expanded)
+                    return expanded;
+            }
+        }
+        // Recurse into sub-formulas
+        if (f.args && f.args.length > 0) {
+            const newArgs = f.args.map((a) => (a ? this.expandDefinitionsInFormula(a) : a));
+            let changed = false;
+            for (let i = 0; i < f.args.length; i++) {
+                if (f.args[i] !== newArgs[i]) {
+                    changed = true;
+                    break;
+                }
+            }
+            return changed ? { ...f, args: newArgs } : f;
+        }
+        return f;
+    }
+    /** Try to fold a formula back into a definition reference */
+    foldFormula(f) {
+        const fStr = (0, propositional_1.formulaToString)(f);
+        for (const [name, def] of this.definitions) {
+            if (!def.params || def.params.length === 0) {
+                const defStr = (0, propositional_1.formulaToString)(def.body);
+                if (fStr === defStr) {
+                    return { kind: 'atom', name, source: f.source };
+                }
+            }
+        }
+        return f;
+    }
+    execUnfoldCmd(stmt) {
+        const resolved = this.resolveFormulaRecursive(stmt.formula, new Set());
+        const expanded = this.expandDefinitionsInFormula(resolved);
+        const expandedStr = (0, format_1.formulaToUnicode)(expanded);
+        this.emit(`Unfold: ${(0, format_1.formulaToUnicode)(resolved)} → ${expandedStr}`);
+        this.results.push({
+            status: 'valid',
+            output: expandedStr,
+            diagnostics: [],
+            formula: expanded,
+        });
+    }
+    execFoldCmd(stmt) {
+        const resolved = this.resolveFormulaRecursive(stmt.formula, new Set());
+        const folded = this.foldFormula(resolved);
+        const foldedStr = (0, format_1.formulaToUnicode)(folded);
+        this.emit(`Fold: ${(0, format_1.formulaToUnicode)(resolved)} → ${foldedStr}`);
+        this.results.push({
+            status: 'valid',
+            output: foldedStr,
+            diagnostics: [],
+            formula: folded,
+        });
+    }
+    execSourceDecl(stmt) {
+        const info = { id: stmt.name };
+        for (const field of stmt.fields) {
+            switch (field.key) {
+                case 'author':
+                    info.author = String(field.value);
+                    break;
+                case 'work':
+                    info.work = String(field.value);
+                    break;
+                case 'year':
+                    info.year = typeof field.value === 'number' ? field.value : parseInt(String(field.value));
+                    break;
+                case 'section':
+                    info.section = String(field.value);
+                    break;
+                case 'edition':
+                    info.edition = String(field.value);
+                    break;
+                case 'url':
+                    info.url = String(field.value);
+                    break;
+            }
+        }
+        this.sources.set(stmt.name, info);
+        const diags = (0, compiler_1.registerSource)(this.textLayer, info);
+        this.diagnostics.push(...diags);
+        const yearStr = info.year ? ` (${info.year})` : '';
+        this.emit(`Source ${stmt.name}: ${info.author ?? ''}${yearStr} — ${info.work ?? ''}`);
+    }
+    execInterpretCmd(stmt) {
+        const formula = this.resolveFormula(stmt.formula);
+        const key = stmt.passageRef ?? stmt.text;
+        const diags = (0, compiler_1.registerInterpretation)(this.textLayer, key, {
+            text: stmt.text,
+            passageRef: stmt.passageRef,
+            formula,
+        });
+        this.diagnostics.push(...diags);
+        // Also register as a let binding so the interpretation is available as a named formula
+        const bindingName = stmt.text.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+        if (bindingName) {
+            this.defineBinding(bindingName, formula);
+        }
+        this.emit(`Interpret: "${stmt.text}" → ${(0, format_1.formulaToUnicode)(formula)}`);
+    }
+    execGlossaryCmd(_stmt) {
+        this.emit('');
+        this.emit('══════════════════════════════════════');
+        this.emit('  GLOSARIO');
+        this.emit('══════════════════════════════════════');
+        if (this.definitions.size === 0) {
+            this.emit('  (sin definiciones registradas)');
+        }
+        else {
+            for (const [name, def] of this.definitions) {
+                const paramsStr = def.params?.length ? `(${def.params.join(', ')})` : '';
+                const bodyStr = (0, format_1.formulaToUnicode)(def.body);
+                this.emit(`  ${name}${paramsStr}  :=  ${bodyStr}`);
+                if (def.description) {
+                    this.emit(`      "${def.description}"`);
+                }
+            }
+        }
+        // Also show sources if any
+        if (this.sources.size > 0) {
+            this.emit('');
+            this.emit('── Fuentes ──');
+            for (const [, src] of this.sources) {
+                const yearStr = src.year ? ` (${src.year})` : '';
+                this.emit(`  ${src.id}: ${src.author ?? ''}${yearStr} — ${src.work ?? ''}`);
+            }
+        }
+        // Show interpretations if any
+        if (this.textLayer.interpretations.size > 0) {
+            this.emit('');
+            this.emit('── Interpretaciones ──');
+            for (const [, interp] of this.textLayer.interpretations) {
+                this.emit(`  "${interp.text}" → ${(0, format_1.formulaToUnicode)(interp.formula)}`);
+            }
+        }
+        this.emit('══════════════════════════════════════');
+        this.emit('');
+    }
+    // ── End v3 ─────────────────────────────────────────────────
+    executeFnCall(stmt) {
+        // ── Memoización: verificar cache antes de ejecutar ──
+        const evaluatedArgs = stmt.args.map((a) => this.evaluateFormulaValue(a));
+        const memoStmt = { name: stmt.name, args: evaluatedArgs };
+        const fn = this.functions.get(stmt.name);
+        let mKey = null;
+        if (fn && this.isPureFn(fn)) {
+            mKey = this.memoKey(stmt.name, evaluatedArgs);
+            if (mKey !== null && this.fnMemoCache.has(mKey)) {
+                return this.fnMemoCache.get(mKey);
+            }
+        }
+        const initial = this.startFunctionFrame(memoStmt, undefined);
+        if ('result' in initial) {
+            if (mKey !== null && this.fnMemoCache.size < Interpreter.MEMO_CACHE_MAX) {
+                this.fnMemoCache.set(mKey, initial.result);
+            }
+            return initial.result;
+        }
+        const callStack = [initial.frame];
+        let finalResult = undefined;
+        while (callStack.length > 0) {
+            const frame = callStack[callStack.length - 1];
+            if (this.returnSignal) {
+                const result = this.finishFunctionFrame(frame);
+                callStack.pop();
+                if (frame.continuation)
+                    this.applyFunctionContinuation(frame.continuation, result);
+                else
+                    finalResult = result;
+                continue;
+            }
+            const nextStmt = this.nextRuntimeStatement(frame.runtimeStack);
+            if (!nextStmt) {
+                const result = this.finishFunctionFrame(frame);
+                callStack.pop();
+                if (frame.continuation)
+                    this.applyFunctionContinuation(frame.continuation, result);
+                else
+                    finalResult = result;
+                continue;
+            }
+            const nestedCall = this.getDirectFunctionCall(nextStmt);
+            if (nestedCall) {
+                if (nestedCall.type === 'return_stmt') {
+                    const replaced = this.replaceFunctionFrame(frame, nestedCall.call);
+                    if ('result' in replaced) {
+                        this.returnValue = replaced.result || { kind: 'atom', name: 'undefined' };
+                        this.returnSignal = true;
+                    }
+                    else {
+                        callStack[callStack.length - 1] = replaced.frame;
+                    }
+                    continue;
+                }
+                const started = this.startFunctionFrame(nestedCall.call, {
+                    type: nestedCall.type,
+                    stmt: nestedCall.stmt,
+                });
+                if ('result' in started)
+                    this.applyFunctionContinuation(started.resultContinuation, started.result);
+                else
+                    callStack.push(started.frame);
+                continue;
+            }
+            this.dispatchRuntimeStatement(nextStmt, frame.runtimeStack);
+        }
+        // ── Memoización: guardar resultado ──
+        if (mKey !== null && this.fnMemoCache.size < Interpreter.MEMO_CACHE_MAX) {
+            this.fnMemoCache.set(mKey, finalResult);
+        }
+        return finalResult;
+    }
+    startFunctionFrame(stmt, continuation, inheritedReturnState) {
+        // ── Memoización: comprobar cache antes de crear frame ──
+        const fnDef = this.functions.get(stmt.name);
+        if (fnDef && this.isPureFn(fnDef)) {
+            const evaluatedArgs = stmt.args.map((a) => this.evaluateFormulaValue(a));
+            const mk = this.memoKey(stmt.name, evaluatedArgs);
+            if (mk !== null && this.fnMemoCache.has(mk)) {
+                return {
+                    result: this.fnMemoCache.get(mk),
+                    resultContinuation: continuation || { type: 'discard' },
+                };
+            }
+        }
+        this.callDepth++;
+        if (this.callDepth > MAX_CALL_DEPTH) {
+            this.callDepth--;
+            throw new Error(`Límite de recursión excedido (${MAX_CALL_DEPTH}).`);
+        }
+        this.runtimeCallCount++;
+        if (this.runtimeCallCount > this.getRuntimeCallLimit()) {
+            this.callDepth--;
+            throw new Error(`Límite de llamadas ST excedido (${this.getRuntimeCallLimit()}).`);
+        }
+        if ([
+            'typeof',
+            'is_valid',
+            'is_satisfiable',
+            'get_atoms',
+            'atoms_of',
+            'len',
+            'at',
+            'formula_eq',
+            'input',
+        ].includes(stmt.name)) {
+            const result = this.executeBuiltin(stmt.name, stmt.args);
+            this.callDepth--;
+            return { result, resultContinuation: continuation || { type: 'discard' } };
+        }
+        if (stmt.name.includes('.')) {
+            const [prefix, methodName] = stmt.name.split('.', 2);
+            let actualInstanceName = prefix;
+            if (this.hasBinding(prefix)) {
+                const resolved = this.requireFormulaBinding(prefix);
+                if (resolved.kind === 'atom' && resolved.name)
+                    actualInstanceName = resolved.name;
+            }
+            const scope = this.theories.get(actualInstanceName);
+            if (scope) {
+                const internalFnName = `${actualInstanceName}.${methodName}`;
+                const fn = this.functions.get(internalFnName);
+                if (fn)
+                    return {
+                        frame: this.createFunctionFrame(internalFnName, fn, stmt.args, continuation, scope, inheritedReturnState),
+                    };
+            }
+        }
+        const template = this.theoryTemplates.get(stmt.name);
+        if (template) {
+            const instanceId = `inst_${stmt.name}_${this.theories.size}`;
+            this.instantiateTheory(template.node, instanceId, stmt.args);
+            this.callDepth--;
+            return {
+                result: { kind: 'atom', name: instanceId },
+                resultContinuation: continuation || { type: 'discard' },
+            };
+        }
+        const fn = this.functions.get(stmt.name);
+        if (!fn) {
+            this.callDepth--;
+            throw new Error(`Función o Teoría '${stmt.name}' no declarada`);
+        }
+        return {
+            frame: this.createFunctionFrame(stmt.name, fn, stmt.args, continuation, undefined, inheritedReturnState),
+        };
+    }
+    createFunctionFrame(name, fn, args, continuation, scope, inheritedReturnState) {
+        if (args.length !== fn.params.length) {
+            this.callDepth--;
+            throw new Error(`Argumentos incorrectos.`);
+        }
+        let scopeSnapshot;
+        if (scope) {
+            scopeSnapshot = {
+                letBindings: new Map(this.letBindings),
+                axioms: new Map(this.theory.axioms),
+                theorems: new Map(this.theory.theorems),
+                theoryName: this.currentTheoryName,
+            };
+            for (const [key, value] of scope.letBindings)
+                this.letBindings.set(key, value);
+            for (const [key, value] of scope.axioms)
+                this.theory.axioms.set(key, value);
+            for (const [key, value] of scope.theorems)
+                this.theory.theorems.set(key, value);
+            this.currentTheoryName = scope.name;
+        }
+        const bindingFrame = this.createBindingFrame();
+        this.currentBindingFrame = bindingFrame;
+        for (let i = 0; i < fn.params.length; i++) {
+            this.currentBindingFrame.bindings.set(fn.params[i], this.evaluateFormulaValue(args[i]));
+        }
+        const savedReturnSignal = inheritedReturnState?.signal ?? this.returnSignal;
+        const savedReturnValue = inheritedReturnState?.value ?? this.returnValue;
+        this.returnSignal = false;
+        this.returnValue = undefined;
+        // Calcular clave de memoización para este frame
+        const evaluatedArgValues = Array.from(this.currentBindingFrame.bindings.values());
+        let frameMemoKey = null;
+        if (this.isPureFn(fn)) {
+            frameMemoKey = this.memoKey(name, evaluatedArgValues);
+        }
+        return {
+            name,
+            runtimeStack: [{ kind: 'statements', statements: fn.body, index: 0 }],
+            bindingFrame,
+            savedReturnSignal,
+            savedReturnValue,
+            scopeSnapshot,
+            continuation,
+            memoKey: frameMemoKey,
+        };
+    }
+    finishFunctionFrame(frame) {
+        const result = this.returnValue;
+        this.returnSignal = frame.savedReturnSignal;
+        this.returnValue = frame.savedReturnValue;
+        // ── Memoización: guardar resultado al finalizar frame ──
+        if (frame.memoKey && this.fnMemoCache.size < Interpreter.MEMO_CACHE_MAX) {
+            this.fnMemoCache.set(frame.memoKey, result);
+        }
+        this.discardFunctionFrameState(frame);
+        this.callDepth--;
+        return result;
+    }
+    discardFunctionFrameState(frame) {
+        this.currentBindingFrame = frame.bindingFrame.parent;
+        if (frame.scopeSnapshot) {
+            this.letBindings = frame.scopeSnapshot.letBindings;
+            this.theory.axioms = frame.scopeSnapshot.axioms;
+            this.theory.theorems = frame.scopeSnapshot.theorems;
+            this.currentTheoryName = frame.scopeSnapshot.theoryName;
+            this.invalidateResolveCache();
+        }
+    }
+    replaceFunctionFrame(frame, stmt) {
+        const inheritedReturnState = {
+            signal: frame.savedReturnSignal,
+            value: frame.savedReturnValue,
+        };
+        const inheritedContinuation = frame.continuation;
+        const evaluatedArgs = stmt.args.map((arg) => this.evaluateFormulaValue(arg));
+        this.discardFunctionFrameState(frame);
+        this.callDepth--;
+        const replaced = this.startFunctionFrame({ name: stmt.name, args: evaluatedArgs }, inheritedContinuation, inheritedReturnState);
+        if ('frame' in replaced)
+            return replaced;
+        return { result: replaced.result };
+    }
+    nextRuntimeStatement(runtimeStack) {
+        while (runtimeStack.length > 0) {
+            const frame = runtimeStack[runtimeStack.length - 1];
+            if (frame.kind === 'statements') {
+                if (frame.index >= frame.statements.length) {
+                    runtimeStack.pop();
+                    continue;
+                }
+                return frame.statements[frame.index++];
+            }
+            if (frame.kind === 'for') {
+                if (this.returnSignal || frame.index >= frame.stmt.items.length) {
+                    this.restoreBindingSnapshot(frame.stmt.variable, frame.savedBinding);
+                    runtimeStack.pop();
+                    continue;
+                }
+                const resolved = this.evaluateFormulaValue(frame.stmt.items[frame.index]);
+                this.setBinding(frame.stmt.variable, resolved);
+                frame.index++;
+                runtimeStack.push({ kind: 'statements', statements: frame.stmt.body, index: 0 });
+                continue;
+            }
+            if (this.returnSignal) {
+                runtimeStack.pop();
+                continue;
+            }
+            const profile = this.requireProfile();
+            const maxIter = frame.stmt.maxIterations || 1000;
+            if (frame.iterations >= maxIter) {
+                this.diagnostics.push({
+                    severity: 'warning',
+                    message: `while: se alcanzó el límite de ${maxIter} iteraciones`,
+                    file: frame.stmt.source.file,
+                    line: frame.stmt.source.line,
+                    column: frame.stmt.source.column,
+                });
+                runtimeStack.pop();
+                continue;
+            }
+            const resolved = this.evaluateFormulaValue(frame.stmt.formula);
+            const matched = this.matchesRuntimeCondition(profile, frame.stmt.condition, resolved);
+            if (!matched) {
+                runtimeStack.pop();
+                continue;
+            }
+            frame.iterations++;
+            runtimeStack.push({ kind: 'statements', statements: frame.stmt.body, index: 0 });
+        }
+        return undefined;
+    }
+    executeFunctionInScope(fn, args, scope) {
+        this.callDepth++;
+        if (this.callDepth > MAX_CALL_DEPTH) {
+            this.callDepth--;
+            throw new Error(`Límite de recursión excedido.`);
+        }
+        try {
+            const savedBindings = new Map(this.letBindings);
+            const savedAxioms = new Map(this.theory.axioms);
+            const savedTheorems = new Map(this.theory.theorems);
+            const savedTheoryName = this.currentTheoryName;
+            for (const [k, v] of scope.letBindings)
+                this.letBindings.set(k, v);
+            for (const [k, v] of scope.axioms)
+                this.theory.axioms.set(k, v);
+            for (const [k, v] of scope.theorems)
+                this.theory.theorems.set(k, v);
+            this.currentTheoryName = scope.name;
+            for (let i = 0; i < fn.params.length; i++)
+                this.letBindings.set(fn.params[i], this.resolveFormula(args[i]));
+            const savedReturnSignal = this.returnSignal;
+            const savedReturnValue = this.returnValue;
+            this.returnSignal = false;
+            this.returnValue = undefined;
+            for (const bodyStmt of fn.body) {
+                if (this.returnSignal)
+                    break;
+                this.executeStatement(bodyStmt);
+            }
+            const result = this.returnValue;
+            this.returnSignal = savedReturnSignal;
+            this.returnValue = savedReturnValue;
+            this.letBindings = savedBindings;
+            this.theory.axioms = savedAxioms;
+            this.theory.theorems = savedTheorems;
+            this.currentTheoryName = savedTheoryName;
+            return result;
+        }
+        finally {
+            this.callDepth--;
+        }
+    }
+    tryConstantFold(f) {
+        if (!f || !f.args)
+            return f;
+        const ARITH_OPS = {
+            add: (a, b) => a + b,
+            subtract: (a, b) => a - b,
+            multiply: (a, b) => a * b,
+            divide: (a, b) => a / b,
+            modulo: (a, b) => a % b,
+        };
+        // Note: comparison operators (less, greater, etc.) are NOT folded here.
+        // They must retain their structural form so profiles can evaluate them properly.
+        const newArgs = f.args.map((a) => this.tryConstantFold(a));
+        if (newArgs.length === 2 &&
+            newArgs[0].kind === 'number' &&
+            newArgs[1].kind === 'number' &&
+            ARITH_OPS[f.kind]) {
+            // Don't fold division/modulo by zero — preserve structure for checkWellFormed
+            if ((f.kind === 'divide' || f.kind === 'modulo') && (newArgs[1].value ?? 0) === 0) {
+                return { ...f, args: newArgs };
+            }
+            const op = ARITH_OPS[f.kind];
+            const res = op(newArgs[0].value ?? 0, newArgs[1].value ?? 0);
+            return { kind: 'number', value: res, source: f.source };
+        }
+        return { ...f, args: newArgs };
+    }
+    executeBuiltin(name, args) {
+        const arg = args[0] ? this.resolveFormula(args[0]) : undefined;
+        if (name === 'typeof') {
+            let typeStr = 'Formula';
+            if (arg?.kind === 'number')
+                typeStr = 'Number';
+            if (arg?.kind === 'list')
+                typeStr = 'List';
+            if (arg?.kind === 'atom' && arg.name?.startsWith('"'))
+                typeStr = 'String';
+            return { kind: 'atom', name: `"${typeStr}"`, source: arg?.source };
+        }
+        if (name === 'is_valid' || name === 'is_satisfiable') {
+            const profile = this.requireProfile();
+            if (!arg)
+                return { kind: 'atom', name: '"Error"' };
+            try {
+                const result = name === 'is_valid' ? profile.checkValid(arg) : profile.checkSatisfiable(arg);
+                const isTrue = result.status === 'valid' || result.status === 'satisfiable';
+                return { kind: 'atom', name: `"${isTrue ? 'True' : 'False'}"`, source: arg.source };
+            }
+            catch {
+                return { kind: 'atom', name: '"Error"', source: arg.source };
+            }
+        }
+        if (name === 'get_atoms') {
+            if (!arg)
+                return { kind: 'atom', name: '"{ }"' };
+            const atoms = this.collectAtoms(arg);
+            return { kind: 'atom', name: `"{ ${atoms.join(', ')} }"`, source: arg.source };
+        }
+        if (name === 'atoms_of') {
+            const source = arg?.source;
+            const items = (arg ? this.collectValueAtoms(arg) : []).map((atomName) => ({
+                kind: 'atom',
+                name: atomName,
+                source,
+            }));
+            return { kind: 'list', args: items, source };
+        }
+        if (name === 'len') {
+            if (arg?.kind === 'list') {
+                return { kind: 'number', value: arg.args?.length ?? 0, source: arg.source };
+            }
+            if (arg?.kind === 'atom' && arg.name?.startsWith('"')) {
+                return {
+                    kind: 'number',
+                    value: arg.name.replace(/(^"|"$)/g, '').length,
+                    source: arg.source,
+                };
+            }
+            return { kind: 'number', value: 0, source: arg?.source };
+        }
+        if (name === 'at') {
+            const listArg = arg;
+            const indexArg = args[1] ? this.resolveFormula(args[1]) : undefined;
+            if (listArg?.kind === 'list' && indexArg?.kind === 'number') {
+                const index = Math.floor(indexArg.value ?? -1);
+                return listArg.args?.[index] || { kind: 'atom', name: 'undefined', source: listArg.source };
+            }
+            return { kind: 'atom', name: 'undefined', source: listArg?.source || indexArg?.source };
+        }
+        if (name === 'formula_eq') {
+            const left = arg;
+            const right = args[1] ? this.resolveFormula(args[1]) : undefined;
+            const equal = !!left && !!right && (0, propositional_1.formulaToString)(left) === (0, propositional_1.formulaToString)(right);
+            return {
+                kind: 'number',
+                value: equal ? 1 : 0,
+                source: left?.source || right?.source,
+            };
+        }
+        if (name === 'input') {
+            if (!arg)
+                return { kind: 'atom', name: '""' };
+            const prompt = arg.kind === 'atom' && arg.name?.startsWith('"')
+                ? arg.name.replace(/(^"|"$)/g, '')
+                : (0, propositional_1.formulaToString)(arg);
+            let inputStr;
+            try {
+                process.stdout.write(prompt + ' ');
+                // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
+                const fs = require('fs');
+                const buf = Buffer.alloc(256);
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+                const bytesRead = fs.readSync(process.stdin.fd, buf, 0, 256, null);
+                inputStr = buf.toString('utf8', 0, bytesRead).trim();
+            }
+            catch {
+                inputStr = 'interactive_not_supported';
+            }
+            return { kind: 'atom', name: `"${inputStr}"`, source: arg.source };
+        }
+        return undefined;
+    }
+    executeActionExpr(action) {
+        const profile = this.requireProfile();
+        switch (action.action) {
+            case 'check_valid': {
+                const formula = this.requireActionFormula(action, 'formula');
+                return {
+                    result: profile.checkValid(formula),
+                    primary: formula,
+                    formulas: [formula],
+                    extraBindings: [],
+                };
+            }
+            case 'check_satisfiable': {
+                const formula = this.requireActionFormula(action, 'formula');
+                return {
+                    result: profile.checkSatisfiable(formula),
+                    primary: formula,
+                    formulas: [formula],
+                    extraBindings: [],
+                };
+            }
+            case 'check_equivalent': {
+                if (!profile.checkEquivalent) {
+                    throw new Error('Este perfil no soporta check equivalent');
+                }
+                const left = this.requireActionFormula(action, 'left');
+                const right = this.requireActionFormula(action, 'right');
+                const comparison = {
+                    kind: 'biconditional',
+                    args: [left, right],
+                    source: action.source,
+                };
+                return {
+                    result: profile.checkEquivalent(left, right),
+                    primary: comparison,
+                    formulas: [left, right],
+                    extraBindings: [
+                        ['left', left],
+                        ['right', right],
+                        [
+                            'equivalent',
+                            {
+                                kind: 'number',
+                                value: (0, propositional_1.formulaToString)(left) === (0, propositional_1.formulaToString)(right) ? 1 : 0,
+                                source: action.source,
+                            },
+                        ],
+                    ],
+                };
+            }
+            case 'derive': {
+                const goal = this.requireActionFormula(action, 'goal');
+                const premises = this.requireActionPremises(action);
+                const ephemeralTheory = this.buildEphemeralTheory();
+                const result = profile.derive(goal, premises, ephemeralTheory);
+                const premiseFormulas = premises
+                    .map((premise) => ephemeralTheory.axioms.get(premise) || ephemeralTheory.theorems.get(premise))
+                    .filter((value) => !!value)
+                    .map((formula) => this.resolveFormula(formula));
+                return {
+                    result,
+                    primary: result.formula || goal,
+                    formulas: [goal, ...premiseFormulas],
+                    extraBindings: [
+                        ['goal', goal],
+                        ['premises', this.createListFormula(premiseFormulas, action.source)],
+                        ['premise_names', this.createStringListFormula(premises, action.source)],
+                        ...this.createProofBindings(result, action.source),
+                    ],
+                };
+            }
+            case 'prove': {
+                const goal = this.requireActionFormula(action, 'goal');
+                const premises = this.requireActionPremises(action);
+                const ephemeralTheory = this.buildEphemeralTheory();
+                const result = profile.prove(goal, ephemeralTheory, premises);
+                const premiseFormulas = premises
+                    .map((premise) => ephemeralTheory.axioms.get(premise) || ephemeralTheory.theorems.get(premise))
+                    .filter((value) => !!value)
+                    .map((formula) => this.resolveFormula(formula));
+                return {
+                    result,
+                    primary: result.formula || goal,
+                    formulas: [goal, ...premiseFormulas],
+                    extraBindings: [
+                        ['goal', goal],
+                        ['premises', this.createListFormula(premiseFormulas, action.source)],
+                        ['premise_names', this.createStringListFormula(premises, action.source)],
+                        ...this.createProofBindings(result, action.source),
+                    ],
+                };
+            }
+            case 'countermodel': {
+                const formula = this.requireActionFormula(action, 'formula');
+                const result = profile.countermodel(formula);
+                return {
+                    result,
+                    primary: result.formula || formula,
+                    formulas: [formula],
+                    extraBindings: [
+                        [
+                            'has_countermodel',
+                            { kind: 'number', value: result.model ? 1 : 0, source: action.source },
+                        ],
+                    ],
+                };
+            }
+            case 'truth_table': {
+                if (!profile.truthTable) {
+                    throw new Error('Este perfil no soporta truth_table');
+                }
+                const formula = this.requireActionFormula(action, 'formula');
+                const tt = profile.truthTable(formula);
+                const result = {
+                    status: tt.isTautology ? 'valid' : tt.isSatisfiable ? 'satisfiable' : 'unsatisfiable',
+                    output: this.formatTruthTable(formula, tt),
+                    truthTable: tt,
+                    diagnostics: [],
+                    formula,
+                };
+                return {
+                    result,
+                    primary: formula,
+                    formulas: [formula],
+                    extraBindings: [
+                        ['variables', this.createAtomListFormula(tt.variables, action.source)],
+                        ['rows_count', { kind: 'number', value: tt.rows.length, source: action.source }],
+                        [
+                            'satisfying_count',
+                            { kind: 'number', value: tt.satisfyingCount ?? 0, source: action.source },
+                        ],
+                    ],
+                };
+            }
+            case 'explain': {
+                const formula = this.requireActionFormula(action, 'formula');
+                return {
+                    result: profile.explain(formula),
+                    primary: formula,
+                    formulas: [formula],
+                    extraBindings: [],
+                };
+            }
+        }
+    }
+    requireActionFormula(action, field) {
+        const value = action[field];
+        if (!(0, types_1.isFormula)(value)) {
+            throw new Error(`La accion '${action.action}' requiere una formula valida en '${field}'.`);
+        }
+        return this.resolveFormula(value);
+    }
+    requireActionPremises(action) {
+        if (action.premises === undefined)
+            return [];
+        if (!Array.isArray(action.premises) ||
+            action.premises.some((premise) => typeof premise !== 'string')) {
+            throw new Error(`La accion '${action.action}' requiere una lista valida de premisas.`);
+        }
+        return action.premises;
+    }
+    bindCapturedAction(baseName, actionName, primary, result, formulas, extraBindings) {
+        this.defineBinding(baseName, primary);
+        this.defineBinding(`${baseName}.formula`, primary);
+        this.defineBinding(`${baseName}.status`, this.createStringFormula(result.status, primary.source));
+        this.defineBinding(`${baseName}.output`, this.createStringFormula(result.output || '', primary.source));
+        this.defineBinding(`${baseName}.ok`, {
+            kind: 'number',
+            value: this.isSuccessfulStatus(result.status) ? 1 : 0,
+            source: primary.source,
+        });
+        this.defineBinding(`${baseName}.command`, this.createStringFormula(actionName, primary.source));
+        this.defineBinding(`${baseName}.formulas`, this.createListFormula(formulas, primary.source));
+        this.defineBinding(`${baseName}.diagnostics`, this.createStringListFormula(result.diagnostics.map((diag) => diag.message), primary.source));
+        for (const [suffix, value] of extraBindings) {
+            this.defineBinding(`${baseName}.${suffix}`, value);
+        }
+    }
+    createStringFormula(value, source) {
+        return {
+            kind: 'atom',
+            name: `"${value.replace(/"/g, '\\"')}"`,
+            source,
+        };
+    }
+    createListFormula(items, source) {
+        return { kind: 'list', args: items, source };
+    }
+    createAtomListFormula(items, source) {
+        return this.createListFormula(items.map((item) => ({ kind: 'atom', name: item, source })), source);
+    }
+    createNumberFormula(value, source) {
+        return {
+            kind: 'number',
+            value,
+            source,
+        };
+    }
+    createNumberListFormula(items, source) {
+        return this.createListFormula(items.map((item) => this.createNumberFormula(item, source)), source);
+    }
+    createNestedNumberListFormula(items, source) {
+        return this.createListFormula(items.map((entry) => this.createNumberListFormula(entry, source)), source);
+    }
+    createStringListFormula(items, source) {
+        return this.createListFormula(items.map((item) => this.createStringFormula(item, source)), source);
+    }
+    createProofBindings(result, source) {
+        const steps = result.proof?.steps ?? [];
+        return [
+            [
+                'steps',
+                this.createListFormula(steps.map((step) => step.formula), source),
+            ],
+            [
+                'steps_formulas',
+                this.createListFormula(steps.map((step) => step.formula), source),
+            ],
+            ['steps_count', this.createNumberFormula(steps.length, source)],
+            [
+                'step_numbers',
+                this.createNumberListFormula(steps.map((step) => step.stepNumber), source),
+            ],
+            [
+                'step_justifications',
+                this.createStringListFormula(steps.map((step) => step.justification), source),
+            ],
+            [
+                'step_premises',
+                this.createNestedNumberListFormula(steps.map((step) => step.premises), source),
+            ],
+            [
+                'step_sources',
+                this.createStringListFormula(steps.map((step) => step.source ?? ''), source),
+            ],
+            ['proof_method', this.createStringFormula(result.proof?.method ?? '', source)],
+            ['proof_status', this.createStringFormula(result.proof?.status ?? '', source)],
+            [
+                'semantic_fallback',
+                this.createNumberFormula(result.proof?.metadata?.semanticFallback ? 1 : 0, source),
+            ],
+        ];
+    }
+    isSuccessfulStatus(status) {
+        return status === 'valid' || status === 'satisfiable' || status === 'provable';
+    }
+    collectValueAtoms(formula) {
+        const seen = new Set();
+        const walk = (value) => {
+            if (value.kind === 'atom' && value.name && !value.name.startsWith('"')) {
+                seen.add(value.name);
+                return;
+            }
+            for (const arg of value.args || []) {
+                walk(arg);
+            }
+        };
+        walk(formula);
+        return Array.from(seen);
+    }
+    execImportDecl(stmt) {
+        let requestedPath = stmt.path;
+        if (!requestedPath.endsWith('.st'))
+            requestedPath += '.st';
+        let source;
+        let resolved;
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
+            const fs = require('fs');
+            // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
+            const path = require('path');
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+            resolved = path.isAbsolute(requestedPath)
+                ? requestedPath
+                : // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+                    path.resolve(path.dirname(stmt.source.file || '.'), requestedPath);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+            source = fs.readFileSync(resolved, 'utf-8');
+        }
+        catch {
+            throw new Error(`No se pudo importar '${requestedPath}'`);
+        }
+        if (this.activeImports.has(resolved))
+            return;
+        if (this.importedFiles.get(resolved) === source)
+            return;
+        this.activeImports.add(resolved);
+        this.importedFiles.set(resolved, source);
+        const parser = new parser_1.Parser(resolved);
+        const program = parser.parse(source);
+        this.diagnostics.push(...parser.diagnostics);
+        const prevIsImporting = this.isImporting;
+        const prevLetBindings = new Map(this.letBindings);
+        const prevAxioms = new Map(this.theory.axioms);
+        const prevTheorems = new Map(this.theory.theorems);
+        const prevFunctions = new Map(this.functions);
+        const prevTheories = new Map(this.theories);
+        const prevExportedBindings = new Map(this.exportedBindings);
+        const prevExportedAxioms = new Map(this.exportedAxioms);
+        const prevExportedTheorems = new Map(this.exportedTheorems);
+        const prevExportedFunctions = new Map(this.exportedFunctions);
+        const prevExportedTheories = new Map(this.exportedTheories);
+        // eslint-disable-next-line no-useless-assignment -- needed as fallback if try block throws
+        let newExports = null;
+        try {
+            this.isImporting = true;
+            this.letBindings.clear();
+            this.theory.axioms.clear();
+            this.theory.theorems.clear();
+            this.functions.clear();
+            this.theories.clear();
+            this.exportedBindings.clear();
+            this.exportedAxioms.clear();
+            this.exportedTheorems.clear();
+            this.exportedFunctions.clear();
+            this.exportedTheories.clear();
+            for (const importedStmt of program.statements)
+                this.executeStatement(importedStmt);
+            newExports = {
+                bindings: new Map(this.exportedBindings),
+                axioms: new Map(this.exportedAxioms),
+                theorems: new Map(this.exportedTheorems),
+                functions: new Map(this.exportedFunctions),
+                theories: new Map(this.exportedTheories),
+            };
+        }
+        finally {
+            this.isImporting = prevIsImporting;
+            this.letBindings = prevLetBindings;
+            this.theory.axioms = prevAxioms;
+            this.theory.theorems = prevTheorems;
+            this.functions = prevFunctions;
+            this.theories = prevTheories;
+            this.exportedBindings = prevExportedBindings;
+            this.exportedAxioms = prevExportedAxioms;
+            this.exportedTheorems = prevExportedTheorems;
+            this.exportedFunctions = prevExportedFunctions;
+            this.exportedTheories = prevExportedTheories;
+            this.activeImports.delete(resolved);
+        }
+        for (const [k, v] of newExports?.bindings ?? [])
+            this.letBindings.set(k, v);
+        for (const [k, v] of newExports?.axioms ?? [])
+            this.theory.axioms.set(k, v);
+        for (const [k, v] of newExports?.theorems ?? [])
+            this.theory.theorems.set(k, v);
+        for (const [k, v] of newExports?.functions ?? [])
+            this.functions.set(k, v);
+        for (const [k, v] of newExports?.theories ?? [])
+            this.theories.set(k, v);
+        this.invalidateResolveCache();
+    }
+    execExplainCmd(stmt) {
+        const profile = this.requireProfile();
+        const resolved = this.resolveFormula(stmt.formula);
+        const result = profile.explain(resolved);
+        this.results.push(result);
+        if (result.output)
+            this.emit(result.output);
+    }
+    emit(msg) {
+        this.stdoutLines.push(msg);
+    }
+    getVerbosity() {
+        const v = this.getBinding('verbose');
+        if (v && v.kind === 'atom' && v.name)
+            return v.name.toLowerCase().replace(/(^"|"$)/g, '');
+        return 'off';
+    }
+    emitResult(cmd, result) {
+        this.emit(`${this.statusIcon(result.status)} [${cmd}] ${result.output || result.status}`);
+        const verbosity = this.getVerbosity();
+        if (result.paradoxWarning)
+            this.emit(`  ⚠ PARADOJA: ${result.paradoxWarning}`);
+        if (result.formula && (verbosity === 'on' || result.formulaClassification)) {
+            const cls = (0, formula_classifier_1.classifyFormula)(result.formula);
+            const name = result.formulaClassification || cls.formulaClassification;
+            if (name)
+                this.emit(`  Identificación: ${name}`);
+        }
+        if (result.model && (verbosity === 'on' || cmd === 'countermodel')) {
+            if (result.model.valuation) {
+                this.emit('  Modelo:');
+                for (const [k, v] of Object.entries(result.model.valuation))
+                    this.emit(`    ${k} = ${v}`);
+            }
+        }
+        if (result.tableauTrace && result.tableauTrace.length > 0 && verbosity === 'on') {
+            this.emit('  Traza del tableau:');
+            for (let i = 0; i < result.tableauTrace.length; i++)
+                this.emit(`    ${i + 1}. ${result.tableauTrace[i].message}`);
+        }
+    }
+    collectAtoms(f, seen = new Set()) {
+        if (!f)
+            return [];
+        if (f.kind === 'atom' && f.name && !seen.has(f.name)) {
+            seen.add(f.name);
+            return [f.name];
+        }
+        const result = [];
+        if (f.args)
+            for (const arg of f.args)
+                result.push(...this.collectAtoms(arg, seen));
+        return result;
+    }
+    statusIcon(status) {
+        switch (status) {
+            case 'valid':
+            case 'provable':
+                return '✓';
+            case 'invalid':
+            case 'refutable':
+                return '✗';
+            case 'satisfiable':
+                return '◎';
+            case 'unsatisfiable':
+                return '⊘';
+            default:
+                return '•';
+        }
+    }
+    formatTruthTable(formula, _tt) {
+        return `Tabla de verdad para ${(0, propositional_1.formulaToString)(formula)}`;
+    }
+    getTheory() {
+        return this.theory;
+    }
+    getProfile() {
+        return this.profile;
+    }
+    getTextLayer() {
+        return this.textLayer;
+    }
+    getLetBindings() {
+        return this.letBindings;
+    }
+    getTheories() {
+        return this.theories;
+    }
+}
+exports.Interpreter = Interpreter;
+//# sourceMappingURL=interpreter.js.map

@@ -1,0 +1,270 @@
+"use strict";
+// ============================================================
+// Kripke counter-models para IPC
+// ============================================================
+//
+// IPC es completa respecto a frames de Kripke finitos
+// (Kripke 1965). Una fórmula no es un teorema intuicionista
+// sii existe un modelo de Kripke finito (preorden + forcing
+// persistente) cuya raíz no la fuerza.
+//
+// Estrategia: enumeración acotada de preórdenes sobre
+// {w0,...,w_{k-1}} y todas las valuaciones persistentes
+// (subconjuntos upward-closed por cada átomo).
+//
+// Para refutar contraejemplos clásicos típicos (¬¬P → P,
+// P ∨ ¬P, Peirce) bastan 2-3 mundos.
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.kripkeCounterModel = kripkeCounterModel;
+exports.isIPCValid = isIPCValid;
+const formula_1 = require("./formula");
+/**
+ * Forcing intuicionista en `w` para `f`.
+ */
+function forces(model, w, f) {
+    switch (f.kind) {
+        case 'atom':
+            return model.val.get(w)?.has(f.name) ?? false;
+        case 'bottom':
+            return false;
+        case 'and':
+            return forces(model, w, f.left) && forces(model, w, f.right);
+        case 'or':
+            return forces(model, w, f.left) || forces(model, w, f.right);
+        case 'implies': {
+            for (const v of model.access.get(w) ?? []) {
+                if (forces(model, v, f.left) && !forces(model, v, f.right))
+                    return false;
+            }
+            return true;
+        }
+        case 'not': {
+            for (const v of model.access.get(w) ?? []) {
+                if (forces(model, v, f.arg))
+                    return false;
+            }
+            return true;
+        }
+    }
+}
+/**
+ * Cierra `access` reflexiva y transitivamente in-place.
+ */
+function reflexiveTransitiveClosure(access, worlds) {
+    for (const w of worlds) {
+        if (!access.has(w))
+            access.set(w, new Set());
+        const wSet = access.get(w);
+        if (wSet === undefined)
+            throw new Error(`kripke: missing access set for world ${w}`);
+        wSet.add(w);
+    }
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const w of worlds) {
+            const acc = access.get(w) ?? new Set();
+            const additions = [];
+            for (const v of acc) {
+                for (const u of access.get(v) ?? []) {
+                    if (!acc.has(u))
+                        additions.push(u);
+                }
+            }
+            for (const u of additions) {
+                acc.add(u);
+                changed = true;
+            }
+        }
+    }
+}
+/**
+ * Devuelve todos los conjuntos upward-closed (en el preorden
+ * dado por `access`) sobre `worlds`. Usados para construir
+ * valuaciones persistentes.
+ */
+function upwardClosedSets(worlds, access) {
+    const out = [];
+    const n = worlds.length;
+    for (let mask = 0; mask < 1 << n; mask++) {
+        const subset = new Set();
+        for (let i = 0; i < n; i++) {
+            if (mask & (1 << i))
+                subset.add(worlds[i]);
+        }
+        let upward = true;
+        for (const w of subset) {
+            for (const v of access.get(w) ?? []) {
+                if (!subset.has(v)) {
+                    upward = false;
+                    break;
+                }
+            }
+            if (!upward)
+                break;
+        }
+        if (upward)
+            out.push([...subset]);
+    }
+    return out;
+}
+/**
+ * Genera preórdenes únicos (módulo cierre transitivo) sobre
+ * `size` mundos.
+ */
+function* generatePreorders(size) {
+    const worlds = Array.from({ length: size }, (_, i) => i);
+    const pairs = [];
+    for (let i = 0; i < size; i++) {
+        for (let j = 0; j < size; j++) {
+            if (i !== j)
+                pairs.push([i, j]);
+        }
+    }
+    const seen = new Set();
+    const total = 1 << pairs.length;
+    for (let mask = 0; mask < total; mask++) {
+        const access = new Map();
+        for (const w of worlds)
+            access.set(w, new Set());
+        for (let b = 0; b < pairs.length; b++) {
+            if (mask & (1 << b)) {
+                const [from, to] = pairs[b];
+                (access.get(from) ?? new Set()).add(to);
+            }
+        }
+        reflexiveTransitiveClosure(access, worlds);
+        let hash = '';
+        for (const w of worlds) {
+            hash += `${w}:${[...(access.get(w) ?? [])].sort((a, b) => a - b).join(',')};`;
+        }
+        if (seen.has(hash))
+            continue;
+        seen.add(hash);
+        yield access;
+    }
+}
+function* generateModels(atoms, maxWorlds) {
+    for (let size = 1; size <= maxWorlds; size++) {
+        const worlds = Array.from({ length: size }, (_, i) => i);
+        for (const access of generatePreorders(size)) {
+            const upwards = upwardClosedSets(worlds, access);
+            // Cada átomo elige uno de los upward-closed sets.
+            const k = atoms.length;
+            const total = Math.pow(upwards.length, k);
+            for (let i = 0; i < total; i++) {
+                const val = new Map();
+                for (const w of worlds)
+                    val.set(w, new Set());
+                let idx = i;
+                for (let a = 0; a < k; a++) {
+                    const setIdx = idx % upwards.length;
+                    idx = Math.floor(idx / upwards.length);
+                    for (const w of upwards[setIdx]) {
+                        val.get(w)?.add(atoms[a] ?? '');
+                    }
+                }
+                yield { worlds, access, val };
+            }
+        }
+    }
+}
+function toPublic(model) {
+    const worlds = model.worlds.map((w) => `w${w}`);
+    const accessibility = [];
+    for (const [from, tos] of model.access) {
+        for (const to of tos)
+            accessibility.push([`w${from}`, `w${to}`]);
+    }
+    const forcing = new Map();
+    for (const [w, atoms] of model.val) {
+        forcing.set(`w${w}`, new Set(atoms));
+    }
+    return { worlds, accessibility, forcing };
+}
+/**
+ * Cuenta las subfórmulas distintas (módulo igualdad estructural) de `f`.
+ * IPC tiene la propiedad del modelo finito por filtración a través del
+ * conjunto de subfórmulas: si `f` no es un teorema, existe un modelo de
+ * Kripke (preorden finito + forcing persistente) cuya raíz la refuta y
+ * cuyo número de mundos está acotado por |sub(f)| (cada mundo es un
+ * "tipo" distinto respecto a las subfórmulas). Usamos ese conteo como
+ * cota de completitud para la búsqueda.
+ */
+function countSubformulas(f) {
+    const seen = new Set();
+    const walk = (g) => {
+        const k = (0, formula_1.formulaKey)(g);
+        if (seen.has(k))
+            return;
+        seen.add(k);
+        switch (g.kind) {
+            case 'atom':
+            case 'bottom':
+                return;
+            case 'not':
+                return walk(g.arg);
+            case 'and':
+            case 'or':
+            case 'implies':
+                walk(g.left);
+                walk(g.right);
+                return;
+        }
+    };
+    walk(f);
+    return seen.size;
+}
+/**
+ * Techo de mundos factible para la enumeración exhaustiva.
+ *
+ * Encontrar un contramodelo es barato (corte temprano), pero CONFIRMAR
+ * validez exige agotar todo el espacio de preórdenes × valuaciones. Ese
+ * costo crece con el nº de mundos y, sobre todo, con el nº de átomos
+ * (las valuaciones son #upward-closed-sets ^ |átomos|). Mediciones:
+ * n=4 ⇒ ~0.4s con 4 átomos, ~5s con 5; n=5 ⇒ ~8s ya con 3 átomos.
+ *
+ * Por eso el techo decrece con la cantidad de átomos. Trade-off: para
+ * fórmulas cuyo menor contramodelo excede este techo, la búsqueda no
+ * lo hallará y `isIPCValid` podría reportar validez espuria; el oráculo
+ * autoritativo de validez sigue siendo el prover NJ (`proveIntuiti...`),
+ * que decide IPC de forma completa. Esta enumeración es para EXHIBIR
+ * contramodelos de los casos estándar, no para decidir validez de
+ * fórmulas arbitrariamente grandes.
+ */
+function feasibleWorldCap(atomCount) {
+    if (atomCount <= 2)
+        return 5;
+    if (atomCount <= 4)
+        return 4;
+    return 3;
+}
+/**
+ * API pública: si `formula` NO es válida intuicionistamente,
+ * devuelve un modelo Kripke cuya raíz (w0) la refuta. Si es
+ * válida (dentro de la cota explorada), devuelve `null`.
+ *
+ * El budget por defecto es la cota de filtración |sub(formula)|,
+ * recortada al techo factible según el nº de átomos.
+ */
+function kripkeCounterModel(formula, options = {}) {
+    const atoms = [...(0, formula_1.collectAtoms)(formula)];
+    const filtrationBound = countSubformulas(formula);
+    const cap = options.maxWorlds ?? Math.max(2, Math.min(filtrationBound, feasibleWorldCap(atoms.length)));
+    for (const model of generateModels(atoms, cap)) {
+        if (!forces(model, 0, formula)) {
+            return toPublic(model);
+        }
+    }
+    return null;
+}
+/**
+ * Helper: ¿la fórmula es válida intuicionistamente bajo modelos hasta
+ * la cota de completitud (filtración por subfórmulas, recortada al techo
+ * factible)? Útil en tests para cruzar con el prover. Si se pasa
+ * `maxWorlds`, fija explícitamente la cota.
+ */
+function isIPCValid(formula, maxWorlds) {
+    return kripkeCounterModel(formula, maxWorlds === undefined ? {} : { maxWorlds }) === null;
+}
+//# sourceMappingURL=kripke.js.map

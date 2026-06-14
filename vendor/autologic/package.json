@@ -1,0 +1,28 @@
+{
+  "name": "@stevenvo780/autologic",
+  "version": "2.2.5",
+  "description": "Formalizador automatico de texto natural a logica formal ST, sin IA. NLP basado en reglas. Build vendored para el playground nlp-to-logic.",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "author": "stevenvo780",
+  "license": "MIT",
+  "dependencies": {
+    "@stevenvo780/st-lang": "*"
+  },
+  "optionalDependencies": {
+    "@huggingface/transformers": "^3.8.1"
+  }
+}

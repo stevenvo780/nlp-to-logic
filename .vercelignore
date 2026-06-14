@@ -1,0 +1,6 @@
+# Fuentes clonadas (solo para referencia / rebuild de vendor). NO se despliegan.
+_sources/
+
+# Artefactos locales
+.next/
+*.log

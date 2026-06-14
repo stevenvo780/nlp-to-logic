@@ -1,0 +1,24 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.termAt = exports.replaceLiteralSubterm = exports.replaceAt = exports.isEqualityLiteral = exports.compareTerms = exports.allPositions = exports.allLiteralPositions = exports.proveWithEquality = exports.equalityFactor = exports.demodulate = exports.reflexivityResolve = exports.paramodulateWithSubst = exports.paramodulateAll = exports.paramodulate = exports.EQ_PREDICATE = void 0;
+var types_1 = require("./types");
+Object.defineProperty(exports, "EQ_PREDICATE", { enumerable: true, get: function () { return types_1.EQ_PREDICATE; } });
+var paramodulate_1 = require("./paramodulate");
+Object.defineProperty(exports, "paramodulate", { enumerable: true, get: function () { return paramodulate_1.paramodulate; } });
+Object.defineProperty(exports, "paramodulateAll", { enumerable: true, get: function () { return paramodulate_1.paramodulateAll; } });
+Object.defineProperty(exports, "paramodulateWithSubst", { enumerable: true, get: function () { return paramodulate_1.paramodulateWithSubst; } });
+Object.defineProperty(exports, "reflexivityResolve", { enumerable: true, get: function () { return paramodulate_1.reflexivityResolve; } });
+var demodulate_1 = require("./demodulate");
+Object.defineProperty(exports, "demodulate", { enumerable: true, get: function () { return demodulate_1.demodulate; } });
+Object.defineProperty(exports, "equalityFactor", { enumerable: true, get: function () { return demodulate_1.equalityFactor; } });
+var prove_1 = require("./prove");
+Object.defineProperty(exports, "proveWithEquality", { enumerable: true, get: function () { return prove_1.proveWithEquality; } });
+var term_utils_1 = require("./term-utils");
+Object.defineProperty(exports, "allLiteralPositions", { enumerable: true, get: function () { return term_utils_1.allLiteralPositions; } });
+Object.defineProperty(exports, "allPositions", { enumerable: true, get: function () { return term_utils_1.allPositions; } });
+Object.defineProperty(exports, "compareTerms", { enumerable: true, get: function () { return term_utils_1.compareTerms; } });
+Object.defineProperty(exports, "isEqualityLiteral", { enumerable: true, get: function () { return term_utils_1.isEqualityLiteral; } });
+Object.defineProperty(exports, "replaceAt", { enumerable: true, get: function () { return term_utils_1.replaceAt; } });
+Object.defineProperty(exports, "replaceLiteralSubterm", { enumerable: true, get: function () { return term_utils_1.replaceLiteralSubterm; } });
+Object.defineProperty(exports, "termAt", { enumerable: true, get: function () { return term_utils_1.termAt; } });
+//# sourceMappingURL=index.js.map

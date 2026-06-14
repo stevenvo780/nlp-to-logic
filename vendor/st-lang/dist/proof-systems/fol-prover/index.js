@@ -1,0 +1,27 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.proveFOL = exports.runResolutionLoop = exports.resolve = exports.negate = exports.toCNF = exports.skolemize = exports.substToRecord = exports.applyClause = exports.applyLiteral = exports.applyTerm = exports.unify = exports.clauseToString = exports.literalToString = exports.termToString = exports.mkLit = exports.mkFunc = exports.mkConst = exports.mkVar = void 0;
+var types_1 = require("./types");
+Object.defineProperty(exports, "mkVar", { enumerable: true, get: function () { return types_1.mkVar; } });
+Object.defineProperty(exports, "mkConst", { enumerable: true, get: function () { return types_1.mkConst; } });
+Object.defineProperty(exports, "mkFunc", { enumerable: true, get: function () { return types_1.mkFunc; } });
+Object.defineProperty(exports, "mkLit", { enumerable: true, get: function () { return types_1.mkLit; } });
+Object.defineProperty(exports, "termToString", { enumerable: true, get: function () { return types_1.termToString; } });
+Object.defineProperty(exports, "literalToString", { enumerable: true, get: function () { return types_1.literalToString; } });
+Object.defineProperty(exports, "clauseToString", { enumerable: true, get: function () { return types_1.clauseToString; } });
+var unify_1 = require("./unify");
+Object.defineProperty(exports, "unify", { enumerable: true, get: function () { return unify_1.unify; } });
+Object.defineProperty(exports, "applyTerm", { enumerable: true, get: function () { return unify_1.applyTerm; } });
+Object.defineProperty(exports, "applyLiteral", { enumerable: true, get: function () { return unify_1.applyLiteral; } });
+Object.defineProperty(exports, "applyClause", { enumerable: true, get: function () { return unify_1.applyClause; } });
+Object.defineProperty(exports, "substToRecord", { enumerable: true, get: function () { return unify_1.substToRecord; } });
+var cnf_1 = require("./cnf");
+Object.defineProperty(exports, "skolemize", { enumerable: true, get: function () { return cnf_1.skolemize; } });
+Object.defineProperty(exports, "toCNF", { enumerable: true, get: function () { return cnf_1.toCNF; } });
+Object.defineProperty(exports, "negate", { enumerable: true, get: function () { return cnf_1.negate; } });
+var resolve_1 = require("./resolve");
+Object.defineProperty(exports, "resolve", { enumerable: true, get: function () { return resolve_1.resolve; } });
+Object.defineProperty(exports, "runResolutionLoop", { enumerable: true, get: function () { return resolve_1.runResolutionLoop; } });
+var prove_1 = require("./prove");
+Object.defineProperty(exports, "proveFOL", { enumerable: true, get: function () { return prove_1.proveFOL; } });
+//# sourceMappingURL=index.js.map

@@ -1,0 +1,35 @@
+{
+  "name": "@stevenvo780/st-lang",
+  "version": "4.15.4",
+  "description": "ST — Lenguaje ejecutable con nucleo logico y capa textual. Motor multi-perfil (11 logicas), SAT CDCL, derivaciones, tablas de verdad, contramodelos y capa textual. Build vendored (solo libreria, sin CLI) para el playground nlp-to-logic.",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./api": {
+      "types": "./dist/api.d.ts",
+      "require": "./dist/api.js",
+      "default": "./dist/api.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "require": "./dist/types/index.js",
+      "default": "./dist/types/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "sideEffects": false,
+  "optionalDependencies": {
+    "z3-solver": "^4.16.0"
+  }
+}

@@ -1,0 +1,225 @@
+"use strict";
+// ============================================================
+// Proof Nets — Criterio de corrección de Danos-Regnier
+// ============================================================
+//
+// Un net MLL es correcto sii para toda elección de "switch" sobre
+// los par-links (cada ⅋ elige una de sus dos premisas para
+// conservar la arista hacia la conclusión, descartando la otra),
+// el grafo resultante es:
+//
+//   - acíclico, y
+//   - conexo.
+//
+// Los demás links contribuyen aristas de forma fija:
+//   axiom  : una arista entre sus dos nodos.
+//   cut    : una arista entre sus dos nodos.
+//   tensor : dos aristas (premisa-izq — conclusión, premisa-der — conclusión).
+//   par    : sólo UNA arista por switch (conclusión — premisa elegida).
+//
+// La validación enumera los 2^(#par) switches. Para MLL el número
+// de par-links en una prueba típica es bajo; si fuera grande, el
+// criterio se puede reformular en tiempo lineal (algoritmo de
+// Guerrini), pero queda fuera del alcance educativo aquí.
+//
+// Además validamos consistencia local del net antes del criterio:
+//   - ports de cada link existen.
+//   - axiom/cut conectan fórmulas duales.
+//   - tensor/par conectan {A, B, A⊗B} resp. {A, B, A⅋B}.
+//   - cada nodo tiene la "valencia" correcta (los átomos terminan
+//     en exactamente un axiom o cut; los compuestos son
+//     premisa/conclusión de su link).
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.isCorrect = isCorrect;
+const types_1 = require("./types");
+function indexNodes(net) {
+    const idx = new Map();
+    for (const n of net.nodes) {
+        if (idx.has(n.id))
+            return null; // ids duplicados
+        idx.set(n.id, { formula: n.formula });
+    }
+    return idx;
+}
+function structurallyValid(net) {
+    const idx = indexNodes(net);
+    if (!idx)
+        return false;
+    for (const link of net.links) {
+        for (const p of link.ports) {
+            if (!idx.has(p))
+                return false;
+        }
+        if (link.kind === 'axiom' || link.kind === 'cut') {
+            if (link.ports.length !== 2)
+                return false;
+            const [a, b] = link.ports;
+            const nodeA = idx.get(a);
+            const nodeB = idx.get(b);
+            if (!nodeA || !nodeB)
+                return false;
+            const fa = nodeA.formula;
+            const fb = nodeB.formula;
+            if (!(0, types_1.formulaEquals)(fa, (0, types_1.dual)(fb)))
+                return false;
+        }
+        else {
+            if (link.ports.length !== 3)
+                return false;
+            const [l, r, c] = link.ports;
+            const nodeC = idx.get(c);
+            const nodeL = idx.get(l);
+            const nodeR = idx.get(r);
+            if (!nodeC || !nodeL || !nodeR)
+                return false;
+            const fc = nodeC.formula;
+            const fl = nodeL.formula;
+            const fr = nodeR.formula;
+            if (fc.kind !== link.kind)
+                return false;
+            if (!(0, types_1.formulaEquals)(fc.left, fl) || !(0, types_1.formulaEquals)(fc.right, fr))
+                return false;
+        }
+    }
+    // Valencia mínima: cada átomo debe ser hoja de un axiom o de un
+    // cut. Sin esa condición un átomo "huérfano" pasaría el criterio
+    // DR trivialmente (1 componente, sin ciclos) pero no representa
+    // una prueba: lo rechazamos a nivel estructural.
+    const conclusionsSet = new Set(net.conclusions);
+    for (const node of net.nodes) {
+        if (node.formula.kind !== 'atom')
+            continue;
+        let touches = 0;
+        for (const link of net.links) {
+            if ((link.kind === 'axiom' || link.kind === 'cut') && link.ports.includes(node.id)) {
+                touches++;
+            }
+        }
+        if (touches !== 1) {
+            // Excepción didáctica: si el único uso restante es como
+            // premisa de un tensor/par del cual es hoja, tampoco es
+            // válido — debe terminar en axiom/cut.
+            return false;
+        }
+    }
+    // Suprimimos `conclusionsSet` (declarado por simetría con
+    // futuras extensiones para validar conclusiones explícitas).
+    void conclusionsSet;
+    return true;
+}
+function edgesForSwitching(net, switching) {
+    // `switching[i]` = elección del i-ésimo par-link (true = izquierda).
+    const edges = [];
+    let parIndex = 0;
+    for (const link of net.links) {
+        switch (link.kind) {
+            case 'axiom':
+            case 'cut': {
+                const [a, b] = link.ports;
+                edges.push([a, b]);
+                break;
+            }
+            case 'tensor': {
+                const [l, r, c] = link.ports;
+                edges.push([l, c]);
+                edges.push([r, c]);
+                break;
+            }
+            case 'par': {
+                const [l, r, c] = link.ports;
+                const chooseLeft = switching[parIndex++];
+                edges.push([chooseLeft ? l : r, c]);
+                break;
+            }
+        }
+    }
+    return edges;
+}
+// ---------- Acíclico + conexo por Union-Find ----------
+class UnionFind {
+    parent = new Map();
+    rank = new Map();
+    add(x) {
+        if (!this.parent.has(x)) {
+            this.parent.set(x, x);
+            this.rank.set(x, 0);
+        }
+    }
+    find(x) {
+        const pVal = this.parent.get(x);
+        if (pVal === undefined)
+            throw new Error(`UnionFind: nodo desconocido ${x}`);
+        if (pVal !== x) {
+            const root = this.find(pVal);
+            this.parent.set(x, root);
+            return root;
+        }
+        return pVal;
+    }
+    // Devuelve `false` si los nodos ya estaban en la misma componente
+    // (=> añadir la arista crearía un ciclo).
+    union(x, y) {
+        const rx = this.find(x);
+        const ry = this.find(y);
+        if (rx === ry)
+            return false;
+        const rkx = this.rank.get(rx) ?? 0;
+        const rky = this.rank.get(ry) ?? 0;
+        if (rkx < rky)
+            this.parent.set(rx, ry);
+        else if (rkx > rky)
+            this.parent.set(ry, rx);
+        else {
+            this.parent.set(ry, rx);
+            this.rank.set(rx, rkx + 1);
+        }
+        return true;
+    }
+    components() {
+        const roots = new Set();
+        for (const x of this.parent.keys())
+            roots.add(this.find(x));
+        return roots.size;
+    }
+}
+function switchingIsTree(net, edges) {
+    const uf = new UnionFind();
+    for (const n of net.nodes)
+        uf.add(n.id);
+    for (const [a, b] of edges) {
+        if (!uf.union(a, b))
+            return false; // ciclo
+    }
+    return uf.components() === 1;
+}
+// ---------- Enumeración de switchings ----------
+function countParLinks(net) {
+    let n = 0;
+    for (const l of net.links)
+        if (l.kind === 'par')
+            n++;
+    return n;
+}
+function isCorrect(net) {
+    if (!structurallyValid(net))
+        return false;
+    // Net vacío: trivialmente correcto sólo si no tiene nodos.
+    if (net.nodes.length === 0)
+        return net.links.length === 0;
+    const k = countParLinks(net);
+    // 2^k switchings; protección anti-explosión para tests didácticos.
+    // Con k>20 cualquier net razonable ya excede el alcance educativo.
+    if (k > 20)
+        return false;
+    const total = 1 << k;
+    for (let mask = 0; mask < total; mask++) {
+        const switching = [];
+        for (let i = 0; i < k; i++)
+            switching.push(((mask >> i) & 1) === 1);
+        const edges = edgesForSwitching(net, switching);
+        if (!switchingIsTree(net, edges))
+            return false;
+    }
+    return true;
+}
+//# sourceMappingURL=correctness.js.map

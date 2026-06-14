@@ -1,0 +1,1558 @@
+"use strict";
+// ============================================================
+// ST Editor Protocol — Handler
+// ============================================================
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ProtocolHandler = void 0;
+const parser_1 = require("../parser/parser");
+const interpreter_1 = require("../runtime/interpreter");
+const propositional_1 = require("../logic/profiles/classical/propositional");
+class ProtocolHandler {
+    handle(request) {
+        try {
+            switch (request.method) {
+                case 'parse':
+                    return this.handleParse(request);
+                case 'check':
+                    return this.handleCheck(request);
+                case 'run':
+                    return this.handleRun(request);
+                case 'hover':
+                    return this.handleHover(request);
+                case 'symbols':
+                    return this.handleSymbols(request);
+                case 'goto_definition':
+                    return this.handleGotoDefinition(request);
+                case 'completion':
+                    return this.handleCompletion(request);
+                case 'render':
+                    return this.handleRender(request);
+                default: {
+                    const method = request.method;
+                    return {
+                        id: request.id,
+                        error: { code: -1, message: `Metodo desconocido: ${String(method)}` },
+                    };
+                }
+            }
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : 'Solicitud invalida';
+            return {
+                id: request.id,
+                error: { code: -32602, message },
+            };
+        }
+    }
+    handleParse(request) {
+        const source = this.requireStringParam(request, 'source');
+        const file = this.optionalStringParam(request, 'file', '<stdin>');
+        const parser = new parser_1.Parser(file);
+        const program = parser.parse(source);
+        return {
+            id: request.id,
+            result: { statements: program.statements.length, file: program.file },
+            diagnostics: parser.diagnostics,
+        };
+    }
+    handleCheck(request) {
+        const source = this.requireStringParam(request, 'source');
+        const file = this.optionalStringParam(request, 'file', '<stdin>');
+        const parser = new parser_1.Parser(file);
+        const program = parser.parse(source);
+        const diagnostics = [...parser.diagnostics];
+        // Solo chequear sintaxis y bien-formación
+        if (diagnostics.length === 0) {
+            diagnostics.push({
+                severity: 'info',
+                message: `Archivo parseado correctamente: ${program.statements.length} statements`,
+                file,
+            });
+        }
+        return {
+            id: request.id,
+            result: { valid: diagnostics.filter((d) => d.severity === 'error').length === 0 },
+            diagnostics,
+        };
+    }
+    handleRun(request) {
+        const source = this.requireStringParam(request, 'source');
+        const file = this.optionalStringParam(request, 'file', '<stdin>');
+        const output = new interpreter_1.Interpreter().execute(source, file);
+        return {
+            id: request.id,
+            result: output,
+            diagnostics: output.diagnostics,
+        };
+    }
+    handleHover(request) {
+        const source = this.requireStringParam(request, 'source');
+        const line = this.requireIntegerParam(request, 'line');
+        const column = this.requireIntegerParam(request, 'column');
+        const file = this.optionalStringParam(request, 'file', '<stdin>');
+        const parser = new parser_1.Parser(file);
+        const program = parser.parse(source);
+        // Recopilar todas las definiciones del programa
+        const letDefs = new Map();
+        const axiomDefs = new Map();
+        const theoremDefs = new Map();
+        const defineDefs = new Map();
+        const sourceDefs = new Map();
+        const fnDefs = new Map();
+        const registerHoverDefs = (s, prefix = '') => {
+            switch (s.kind) {
+                case 'let_decl':
+                    if (s.letType === 'description') {
+                        letDefs.set(prefix + s.name, { description: s.description, line: s.source.line });
+                    }
+                    else if (s.letType === 'formula') {
+                        const desc = 'description' in s ? s.description : undefined;
+                        letDefs.set(prefix + s.name, {
+                            formula: (0, propositional_1.formulaToString)(s.formula),
+                            description: desc,
+                            line: s.source.line,
+                        });
+                    }
+                    else if (s.letType === 'passage') {
+                        letDefs.set(prefix + s.name, {
+                            description: `passage([[${s.anchorPath}]])`,
+                            line: s.source.line,
+                        });
+                    }
+                    break;
+                case 'axiom_decl':
+                    axiomDefs.set(prefix + s.name, {
+                        formula: (0, propositional_1.formulaToString)(s.formula),
+                        line: s.source.line,
+                    });
+                    break;
+                case 'theorem_decl':
+                    theoremDefs.set(prefix + s.name, {
+                        formula: (0, propositional_1.formulaToString)(s.formula),
+                        line: s.source.line,
+                    });
+                    break;
+                case 'define_decl':
+                    defineDefs.set(prefix + s.name, {
+                        formula: (0, propositional_1.formulaToString)(s.body),
+                        params: s.params,
+                        description: s.description,
+                        line: s.source.line,
+                    });
+                    break;
+                case 'source_decl':
+                    sourceDefs.set(prefix + s.name, {
+                        fields: s.fields.map((f) => `${f.key}: ${f.value}`).join(', '),
+                        line: s.source.line,
+                    });
+                    break;
+                case 'fn_decl':
+                    fnDefs.set(prefix + s.name, { params: s.params, line: s.source.line });
+                    break;
+            }
+        };
+        for (const stmt of program.statements) {
+            registerHoverDefs(stmt);
+            if (stmt.kind === 'export_decl') {
+                registerHoverDefs(stmt.statement);
+            }
+            if (stmt.kind === 'theory_decl') {
+                const qPrefix = `${stmt.name}.`;
+                for (const member of stmt.members) {
+                    registerHoverDefs(member.statement, qPrefix);
+                }
+            }
+        }
+        // Intentar encontrar la palabra en la posición del cursor
+        if (column !== undefined) {
+            const lines = source.split('\n');
+            if (line >= 1 && line <= lines.length) {
+                const lineText = lines[line - 1];
+                const word = this.getWordAtColumn(lineText, column);
+                if (word) {
+                    // Buscar en let definitions
+                    const letDef = letDefs.get(word);
+                    if (letDef) {
+                        let content = `**Let** \`${word}\``;
+                        if (letDef.description)
+                            content += `\n\n📝 *"${letDef.description}"*`;
+                        if (letDef.formula)
+                            content += `\n\n🔢 \`${letDef.formula}\``;
+                        return {
+                            id: request.id,
+                            result: { content, range: { line, column } },
+                        };
+                    }
+                    // Buscar en axiomas
+                    const axiomDef = axiomDefs.get(word);
+                    if (axiomDef) {
+                        const desc = letDefs.get(word)?.description;
+                        let content = `**Axioma** \`${word}\` = \`${axiomDef.formula}\``;
+                        if (desc)
+                            content += `\n\n📝 *"${desc}"*`;
+                        return {
+                            id: request.id,
+                            result: { content, range: { line, column } },
+                        };
+                    }
+                    // Buscar en teoremas
+                    const theoremDef = theoremDefs.get(word);
+                    if (theoremDef) {
+                        return {
+                            id: request.id,
+                            result: {
+                                content: `**Teorema** \`${word}\` = \`${theoremDef.formula}\``,
+                                range: { line, column },
+                            },
+                        };
+                    }
+                    // Buscar en definitions (define)
+                    const defineDef = defineDefs.get(word);
+                    if (defineDef) {
+                        let content = `**Define** \`${word}\``;
+                        if (defineDef.params && defineDef.params.length > 0)
+                            content += `(${defineDef.params.join(', ')})`;
+                        content += ` := \`${defineDef.formula}\``;
+                        if (defineDef.description)
+                            content += `\n\n📝 *"${defineDef.description}"*`;
+                        return {
+                            id: request.id,
+                            result: { content, range: { line, column } },
+                        };
+                    }
+                    // Buscar en sources
+                    const sourceDef = sourceDefs.get(word);
+                    if (sourceDef) {
+                        return {
+                            id: request.id,
+                            result: {
+                                content: `**Source** \`${word}\`\n\n📖 ${sourceDef.fields}`,
+                                range: { line, column },
+                            },
+                        };
+                    }
+                    // Buscar en funciones
+                    const fnDef = fnDefs.get(word);
+                    if (fnDef) {
+                        return {
+                            id: request.id,
+                            result: {
+                                content: `**Función** \`${word}(${fnDef.params.join(', ')})\``,
+                                range: { line, column },
+                            },
+                        };
+                    }
+                    const staticHover = this.getStaticHoverInfo(word);
+                    if (staticHover) {
+                        return {
+                            id: request.id,
+                            result: { content: staticHover, range: { line, column } },
+                        };
+                    }
+                }
+            }
+        }
+        // Fallback: hover a nivel de statement (línea)
+        for (const stmt of program.statements) {
+            if (stmt.source.line === line) {
+                const info = this.getStatementHoverInfo(stmt, letDefs);
+                if (info) {
+                    return { id: request.id, result: info };
+                }
+            }
+        }
+        return { id: request.id, result: null };
+    }
+    /** Extrae la palabra (identificador, con soporte dot notation) en la posición de columna dada */
+    getWordAtColumn(lineText, column) {
+        const col = column - 1; // 0-based
+        if (col < 0 || col >= lineText.length)
+            return null;
+        // Encontrar inicio de la palabra (soporta puntos para dot notation)
+        let start = col;
+        while (start > 0 && /[a-zA-Z0-9_.]/.test(lineText[start - 1]))
+            start--;
+        // Encontrar fin de la palabra
+        let end = col;
+        while (end < lineText.length && /[a-zA-Z0-9_.]/.test(lineText[end]))
+            end++;
+        const word = lineText.substring(start, end);
+        // Limpiar puntos al inicio/final
+        const cleaned = word.replace(/^\.+|\.+$/g, '');
+        return cleaned.length > 0 ? cleaned : null;
+    }
+    getStaticHoverInfo(word) {
+        const lower = word.toLowerCase();
+        const keywordInfo = {
+            logic: '**logic**\n\nActiva el perfil lógico del script actual.\n\nEjemplo: `logic arithmetic`',
+            axiom: '**axiom**\n\nDeclara una premisa o ley base disponible para derivaciones.\n\nEjemplo: `axiom regla : P -> Q`',
+            theorem: '**theorem**\n\nDeclara un teorema nombrado dentro de una teoría o script.\n\nEjemplo: `theorem identidad : P -> P`',
+            let: '**let**\n\nCrea un alias reutilizable para fórmulas, descripciones o pasajes.',
+            premise: '**premise**\n\nAlias didáctico de `assume` para registrar una premisa temporal dentro de una demostración de aula.',
+            conclusion: '**conclusion**\n\nCierra un bloque de `premise` y demuestra la meta indicada. Si no hay premisas temporales, intenta derivar desde la teoría actual.',
+            therefore: '**therefore**\n\nAlias de `conclusion` para notación de aula o demostraciones cortas.',
+            derive: '**derive**\n\nIntenta derivar una conclusión a partir de premisas nombradas.\n\nEjemplo: `derive Q from {regla, hecho}`',
+            check: '**check**\n\nEvalúa propiedades como validez, satisfacibilidad o equivalencia.',
+            prove: '**prove**\n\nSolicita una demostración formal del objetivo.',
+            countermodel: '**countermodel**\n\nBusca un modelo que haga falsa la fórmula dada.',
+            truth_table: '**truth_table**\n\nGenera la tabla de verdad de una fórmula proposicional.',
+            explain: '**explain**\n\nDevuelve una explicación del perfil o del juicio ejecutado.',
+            analyze: '**analyze**\n\nAnaliza premisas y conclusión para detectar estructura inferencial o falacias.',
+            import: '**import**\n\nImporta otro archivo `.st` dentro del script actual.',
+            export: '**export**\n\nMarca una declaración para que sea visible desde otros scripts que importen este archivo.',
+            theory: '**theory**\n\nDefine un bloque reutilizable (Clase o Singleton) con miembros públicos y privados.\n\nEjemplo:\n```st\ntheory Agente(nombre) {\n  let id = nombre\n}\n```',
+            extends: '**extends**\n\nPermite que una teoría herede miembros públicos de otra teoría.',
+            private: '**private**\n\nMarca un miembro de teoría como interno y no accesible externamente.',
+            print: '**print**\n\nImprime texto o fórmulas durante la ejecución.',
+            set: '**set**\n\nReasigna el valor de una variable o alias en tiempo de ejecución.',
+            if: '**if**\n\nEjecuta un bloque cuando una condición (`valid`, `satisfiable`, etc.) se cumple.',
+            else: '**else**\n\nDefine la rama alternativa de un bloque condicional.',
+            for: '**for**\n\nItera sobre una colección de fórmulas o valores.',
+            in: '**in**\n\nIntroduce la colección usada por un bucle `for`.',
+            while: '**while**\n\nRepite un bloque mientras una condición siga siendo verdadera.',
+            fn: '**fn**\n\nDeclara una función con parámetros y posible retorno.',
+            return: '**return**\n\nDevuelve un valor desde una función.',
+            define: '**define**\n\nDeclara una macro semántica que puede desplegarse con `unfold`.\n\nEjemplo: `define Mortal(x) := Humano(x) -> MuereAlgúnDía(x)`',
+            unfold: '**unfold**\n\nExpande una definición `define` en una fórmula y verifica la expansión.\n\nEjemplo: `unfold Mortal(Sócrates)`',
+            fold: '**fold**\n\nContrae una fórmula expandida de vuelta a su forma definida con `define`.\n\nEjemplo: `fold Humano(s) -> MuereAlgúnDía(s)`',
+            source: '**source**\n\nDeclara una fuente bibliográfica o académica reutilizable.\n\nEjemplo: `source Kant2024 { author: "Immanuel Kant", year: 2024 }`',
+            interpret: '**interpret**\n\nInterpreta un pasaje de texto bajo una fórmula lógica.\n\nEjemplo: `interpret "todo humano es mortal" as forall x (H(x) -> M(x))`',
+            glossary: '**glossary**\n\nMuestra el glosario de todas las definiciones (`define`) activas.',
+            description: '**description**\n\nAñade una descripción en lenguaje natural a una definición `define`.\n\nEjemplo: `define F(x) := P(x) @ "Propiedad fundamental"`',
+            arithmetic: '**arithmetic**\n\nPerfil numérico para expresiones aritméticas, comparaciones y scripting ST.',
+            '+': '**+**\n\nSuma dos expresiones numéricas.',
+            '-': '**-**\n\nResta dos expresiones numéricas o expresa signo negativo.',
+            '*': '**\\***\n\nMultiplica dos expresiones numéricas.',
+            '/': '**/**\n\nDivide una expresión numérica por otra.',
+            '%': '**%**\n\nCalcula el residuo de una división entera.',
+            '<': '**<**\n\nCompara si el operando izquierdo es menor.',
+            '>': '**>**\n\nCompara si el operando izquierdo es mayor.',
+            '<=': '**<=**\n\nCompara si el operando izquierdo es menor o igual.',
+            '>=': '**>=**\n\nCompara si el operando izquierdo es mayor o igual.',
+            '≤': '**≤**\n\nVersión Unicode de `<=`.',
+            '≥': '**≥**\n\nVersión Unicode de `>=`.',
+            '~': '**~**\n\nAlias de negación. `~P` se normaliza como `!P`.',
+            '∼': '**∼**\n\nVersión Unicode alternativa de negación.',
+            '=>': '**=>**\n\nAlias ASCII de implicación. Se normaliza como `->`.',
+            '⇒': '**⇒**\n\nVersión Unicode alternativa de implicación.',
+            '<=>': '**<=>**\n\nAlias ASCII de bicondicional. Se normaliza como `<->`.',
+            '⇔': '**⇔**\n\nVersión Unicode alternativa de bicondicional.',
+            '^': '**^** (XOR)\n\nDisyunción exclusiva. Verdadera si solo uno de los operandos es verdadero.',
+            '⊕': '**⊕** (XOR)\n\nVersión Unicode de `^`.',
+            xor: '**xor**\n\nVersión textual de `^`.',
+            '!&': '**!&** (NAND)\n\nNegación alternativa (Sheffer stroke). Falsa solo si ambos operandos son verdaderos.',
+            '↑': '**↑** (NAND)\n\nVersión Unicode de `!&`.',
+            nand: '**nand**\n\nVersión textual de `!&`.',
+            '!|': '**!|** (NOR)\n\nNegación conjunta (Peirce arrow). Verdadera solo si ambos operandos son falsos.',
+            '↓': '**↓** (NOR)\n\nVersión Unicode de `!|`.',
+            nor: '**nor**\n\nVersión textual de `!|`.',
+            '|-': '**|-**\n\nNotación de secuente. `P, P -> Q |- Q` se interpreta como una derivación desde premisas hacia una meta.',
+            '⊢': '**⊢**\n\nVersión Unicode de `|-`.',
+            '⊥': '**⊥**\n\nConstante de falsedad (bottom).',
+            '⊤': '**⊤**\n\nConstante de verdad (top).',
+        };
+        const aliases = {
+            logica: keywordInfo.logic,
+            axioma: keywordInfo.axiom,
+            teorema: keywordInfo.theorem,
+            premisa: keywordInfo.premise,
+            por_tanto: keywordInfo.conclusion,
+            derivar: keywordInfo.derive,
+            contramodelo: keywordInfo.countermodel,
+            tabla_verdad: keywordInfo.truth_table,
+            explicar: keywordInfo.explain,
+            analizar: keywordInfo.analyze,
+            importar: keywordInfo.import,
+            exportar: keywordInfo.export,
+            teoria: keywordInfo.theory,
+            extiende: keywordInfo.extends,
+            privado: keywordInfo.private,
+            imprimir: keywordInfo.print,
+            asignar: keywordInfo.set,
+            si: keywordInfo.if,
+            sino: keywordInfo.else,
+            para: keywordInfo.for,
+            en: keywordInfo.in,
+            mientras: keywordInfo.while,
+            funcion: keywordInfo.fn,
+            retornar: keywordInfo.return,
+            definir: keywordInfo.define,
+            desplegar: keywordInfo.unfold,
+            plegar: keywordInfo.fold,
+            fuente: keywordInfo.source,
+            interpretar: keywordInfo.interpret,
+            glosario: keywordInfo.glossary,
+            descripcion: keywordInfo.description,
+        };
+        const profileInfo = {
+            'classical.propositional': '**classical.propositional**\n\nLógica proposicional clásica con tablas de verdad y tableaux.',
+            'classical.first_order': '**classical.first_order**\n\nLógica de primer orden con cuantificadores, predicados e igualdad.',
+            'modal.k': '**modal.k**\n\nLógica modal mínima con necesidad (`[]`) y posibilidad (`<>`).',
+            'paraconsistent.belnap': '**paraconsistent.belnap**\n\nLógica paraconsistente de cuatro valores.',
+            'deontic.standard': '**deontic.standard**\n\nLógica deóntica para obligación, permisión y prohibición.',
+            'epistemic.s5': '**epistemic.s5**\n\nLógica epistémica del conocimiento en marcos S5.',
+            'intuitionistic.propositional': '**intuitionistic.propositional**\n\nLógica constructiva sin tercero excluido general.',
+            'temporal.ltl': '**temporal.ltl**\n\nLógica temporal lineal con `next` y `until`.',
+            'aristotelian.syllogistic': '**aristotelian.syllogistic**\n\nSilogística categórica clásica.',
+            'probabilistic.basic': '**probabilistic.basic**\n\nRazonamiento probabilístico básico.',
+            arithmetic: keywordInfo.arithmetic,
+        };
+        return (keywordInfo[word] ??
+            keywordInfo[lower] ??
+            aliases[lower] ??
+            profileInfo[word] ??
+            profileInfo[lower] ??
+            null);
+    }
+    handleSymbols(request) {
+        const source = this.requireStringParam(request, 'source');
+        const file = this.optionalStringParam(request, 'file', '<stdin>');
+        const parser = new parser_1.Parser(file);
+        const program = parser.parse(source);
+        const symbols = [];
+        for (const stmt of program.statements) {
+            switch (stmt.kind) {
+                case 'axiom_decl':
+                    symbols.push({
+                        name: stmt.name,
+                        kind: 'axiom',
+                        detail: (0, propositional_1.formulaToString)(stmt.formula),
+                        location: stmt.source,
+                    });
+                    break;
+                case 'theorem_decl':
+                    symbols.push({
+                        name: stmt.name,
+                        kind: 'theorem',
+                        detail: (0, propositional_1.formulaToString)(stmt.formula),
+                        location: stmt.source,
+                    });
+                    break;
+                case 'claim_decl':
+                    symbols.push({
+                        name: stmt.name,
+                        kind: 'claim',
+                        location: stmt.source,
+                    });
+                    break;
+                case 'let_decl':
+                    symbols.push({
+                        name: stmt.name,
+                        kind: stmt.letType === 'passage'
+                            ? 'passage'
+                            : stmt.letType === 'description'
+                                ? 'variable'
+                                : 'formula',
+                        description: stmt.letType === 'description'
+                            ? stmt.description
+                            : 'description' in stmt
+                                ? stmt.description
+                                : undefined,
+                        detail: stmt.letType === 'formula'
+                            ? (0, propositional_1.formulaToString)(stmt.formula)
+                            : stmt.letType === 'description'
+                                ? `"${stmt.description}"`
+                                : undefined,
+                        location: stmt.source,
+                    });
+                    break;
+                case 'theory_decl': {
+                    // Agregar la teoría como símbolo
+                    const theoryStmt = stmt;
+                    symbols.push({
+                        name: theoryStmt.name,
+                        kind: 'axiom',
+                        description: `Theory${theoryStmt.parent ? ` extends ${theoryStmt.parent}` : ''}`,
+                        detail: `${theoryStmt.members.length} miembros`,
+                        location: theoryStmt.source,
+                    });
+                    // Agregar cada miembro como símbolo con prefijo
+                    for (const member of theoryStmt.members) {
+                        const ms = member.statement;
+                        if ('name' in ms) {
+                            const memberName = `${theoryStmt.name}.${ms.name}`;
+                            const vis = member.visibility === 'private' ? '🔒 ' : '';
+                            if (ms.kind === 'axiom_decl') {
+                                symbols.push({
+                                    name: memberName,
+                                    kind: 'axiom',
+                                    detail: `${vis}${(0, propositional_1.formulaToString)(ms.formula)}`,
+                                    location: ms.source,
+                                });
+                            }
+                            else if (ms.kind === 'theorem_decl') {
+                                symbols.push({
+                                    name: memberName,
+                                    kind: 'theorem',
+                                    detail: `${vis}${(0, propositional_1.formulaToString)(ms.formula)}`,
+                                    location: ms.source,
+                                });
+                            }
+                            else if (ms.kind === 'let_decl') {
+                                symbols.push({
+                                    name: memberName,
+                                    kind: ms.letType === 'description' ? 'variable' : 'formula',
+                                    description: ms.letType === 'description' ? ms.description : undefined,
+                                    detail: `${vis}${ms.letType === 'formula' ? (0, propositional_1.formulaToString)(ms.formula) : ms.letType === 'description' ? `"${ms.description}"` : ''}`,
+                                    location: ms.source,
+                                });
+                            }
+                            else if (ms.kind === 'define_decl') {
+                                symbols.push({
+                                    name: memberName,
+                                    kind: 'definition',
+                                    description: ms.description,
+                                    detail: `${vis}${ms.params ? `(${ms.params.join(', ')}) ` : ''}:= ${(0, propositional_1.formulaToString)(ms.body)}`,
+                                    location: ms.source,
+                                });
+                            }
+                            else if (ms.kind === 'fn_decl') {
+                                symbols.push({
+                                    name: memberName,
+                                    kind: 'function',
+                                    detail: `${vis}(${ms.params.join(', ')})`,
+                                    location: ms.source,
+                                });
+                            }
+                        }
+                    }
+                    break;
+                }
+                case 'define_decl':
+                    symbols.push({
+                        name: stmt.name,
+                        kind: 'definition',
+                        description: stmt.description,
+                        detail: `${stmt.params ? `(${stmt.params.join(', ')}) ` : ''}:= ${(0, propositional_1.formulaToString)(stmt.body)}`,
+                        location: stmt.source,
+                    });
+                    break;
+                case 'source_decl':
+                    symbols.push({
+                        name: stmt.name,
+                        kind: 'source',
+                        detail: stmt.fields.map((f) => `${f.key}: ${f.value}`).join(', '),
+                        location: stmt.source,
+                    });
+                    break;
+                case 'interpret_cmd':
+                    symbols.push({
+                        name: stmt.passageRef || stmt.text,
+                        kind: 'interpretation',
+                        detail: (0, propositional_1.formulaToString)(stmt.formula),
+                        location: stmt.source,
+                    });
+                    break;
+                case 'fn_decl':
+                    symbols.push({
+                        name: stmt.name,
+                        kind: 'function',
+                        detail: `(${stmt.params.join(', ')})`,
+                        location: stmt.source,
+                    });
+                    break;
+                case 'export_decl': {
+                    const inner = stmt.statement;
+                    if (inner.kind === 'define_decl') {
+                        symbols.push({
+                            name: inner.name,
+                            kind: 'definition',
+                            description: inner.description,
+                            detail: `export ${inner.params ? `(${inner.params.join(', ')}) ` : ''}:= ${(0, propositional_1.formulaToString)(inner.body)}`,
+                            location: inner.source,
+                        });
+                    }
+                    else if (inner.kind === 'source_decl') {
+                        symbols.push({
+                            name: inner.name,
+                            kind: 'source',
+                            detail: `export ${inner.fields.map((f) => `${f.key}: ${f.value}`).join(', ')}`,
+                            location: inner.source,
+                        });
+                    }
+                    else if (inner.kind === 'fn_decl') {
+                        symbols.push({
+                            name: inner.name,
+                            kind: 'function',
+                            detail: `export (${inner.params.join(', ')})`,
+                            location: inner.source,
+                        });
+                    }
+                    break;
+                }
+            }
+        }
+        return { id: request.id, result: symbols };
+    }
+    handleGotoDefinition(request) {
+        const source = this.requireStringParam(request, 'source');
+        const name = this.requireStringParam(request, 'name');
+        const file = this.optionalStringParam(request, 'file', '<stdin>');
+        const parser = new parser_1.Parser(file);
+        const program = parser.parse(source);
+        for (const stmt of program.statements) {
+            if ('name' in stmt && stmt.name === name) {
+                return { id: request.id, result: stmt.source };
+            }
+            // Buscar dentro de export_decl
+            if (stmt.kind === 'export_decl') {
+                const inner = stmt.statement;
+                if ('name' in inner && inner.name === name) {
+                    return { id: request.id, result: inner.source };
+                }
+            }
+            // Buscar dentro de theory_decl (con y sin prefijo)
+            if (stmt.kind === 'theory_decl') {
+                for (const member of stmt.members) {
+                    const ms = member.statement;
+                    if ('name' in ms) {
+                        const memberName = ms.name;
+                        const qualifiedName = `${stmt.name}.${memberName}`;
+                        if (memberName === name || qualifiedName === name) {
+                            return { id: request.id, result: ms.source };
+                        }
+                    }
+                }
+            }
+        }
+        return { id: request.id, result: null };
+    }
+    handleCompletion(request) {
+        const items = [
+            // ── Declaración de perfil lógico ────────────────────────────
+            { label: 'logic', kind: 'keyword', detail: 'Declarar perfil lógico', insertText: 'logic ' },
+            {
+                label: 'logic classical.propositional',
+                kind: 'value',
+                detail: 'Lógica proposicional clásica (tablas de verdad + tableau)',
+                insertText: 'logic classical.propositional',
+            },
+            {
+                label: 'logic classical.first_order',
+                kind: 'value',
+                detail: 'Lógica de primer orden (∀, ∃, predicados)',
+                insertText: 'logic classical.first_order',
+            },
+            {
+                label: 'logic modal.k',
+                kind: 'value',
+                detail: 'Lógica modal K (□, ◇, mundos posibles)',
+                insertText: 'logic modal.k',
+            },
+            {
+                label: 'logic paraconsistent.belnap',
+                kind: 'value',
+                detail: 'Lógica paraconsistente Belnap (4 valores: T, F, B, N)',
+                insertText: 'logic paraconsistent.belnap',
+            },
+            {
+                label: 'logic deontic.standard',
+                kind: 'value',
+                detail: 'Lógica deóntica KD — obligación (O), permisión (P), prohibición (F)',
+                insertText: 'logic deontic.standard',
+            },
+            {
+                label: 'logic epistemic.s5',
+                kind: 'value',
+                detail: 'Lógica epistémica S5 — conocimiento (K), creencia (B)',
+                insertText: 'logic epistemic.s5',
+            },
+            {
+                label: 'logic intuitionistic.propositional',
+                kind: 'value',
+                detail: 'Lógica intuicionista (sin tercero excluido, traducción Gödel-McKinsey-Tarski)',
+                insertText: 'logic intuitionistic.propositional',
+            },
+            {
+                label: 'logic temporal.ltl',
+                kind: 'value',
+                detail: 'Lógica temporal lineal (LTL) — G(lobally), F(inally), X(next), U(ntil)',
+                insertText: 'logic temporal.ltl',
+            },
+            {
+                label: 'logic aristotelian.syllogistic',
+                kind: 'value',
+                detail: 'Silogística aristotélica — 24 formas válidas (Barbara, Celarent, etc.)',
+                insertText: 'logic aristotelian.syllogistic',
+            },
+            {
+                label: 'logic probabilistic.basic',
+                kind: 'value',
+                detail: 'Lógica probabilística — razonamiento con probabilidades [0,1]',
+                insertText: 'logic probabilistic.basic',
+            },
+            {
+                label: 'logic arithmetic',
+                kind: 'value',
+                detail: 'Perfil aritmético para cálculos numéricos, comparaciones y scripting',
+                documentation: 'Activa el perfil `arithmetic` para usar `+`, `-`, `*`, `/`, `%`, `<`, `>`, `<=` y `>=` con evaluación numérica.',
+                insertText: 'logic arithmetic',
+            },
+            // ── Declaraciones ───────────────────────────────────────────
+            {
+                label: 'axiom',
+                kind: 'keyword',
+                detail: 'Declarar axioma',
+                insertText: 'axiom ${1:name} : ${2:formula}',
+            },
+            {
+                label: 'theorem',
+                kind: 'keyword',
+                detail: 'Declarar teorema',
+                insertText: 'theorem ${1:name} : ${2:formula}',
+            },
+            {
+                label: 'premise',
+                kind: 'keyword',
+                detail: 'Registrar premisa temporal de aula',
+                insertText: 'premise ${1:formula}',
+            },
+            {
+                label: 'conclusion',
+                kind: 'keyword',
+                detail: 'Cerrar bloque de premisas y demostrar meta',
+                insertText: 'conclusion ${1:formula}',
+            },
+            {
+                label: 'numbered proof',
+                kind: 'snippet',
+                detail: 'Plantilla de prueba numerada estilo aula',
+                insertText: '1. ${1:P} premise\n2. ${2:P -> Q} premise\n3. ${3:Q} MP 1,2',
+            },
+            {
+                label: 'therefore',
+                kind: 'keyword',
+                detail: 'Alias de conclusion',
+                insertText: 'therefore ${1:formula}',
+            },
+            {
+                label: 'let',
+                kind: 'keyword',
+                detail: 'Declarar variable/fórmula',
+                insertText: 'let ${1:name} = ${2:expression}',
+            },
+            // ── Comandos lógicos ────────────────────────────────────────
+            {
+                label: 'derive',
+                kind: 'keyword',
+                detail: 'Derivar fórmula desde premisas',
+                insertText: 'derive ${1:formula} from {${2:premises}}',
+            },
+            {
+                label: 'check valid',
+                kind: 'keyword',
+                detail: 'Verificar validez (tautología)',
+                insertText: 'check valid ${1:formula}',
+            },
+            {
+                label: 'check satisfiable',
+                kind: 'keyword',
+                detail: 'Verificar satisfacibilidad',
+                insertText: 'check satisfiable ${1:formula}',
+            },
+            {
+                label: 'check equivalent',
+                kind: 'keyword',
+                detail: 'Verificar equivalencia lógica entre dos fórmulas',
+                insertText: 'check equivalent ${1:formula1} ${2:formula2}',
+            },
+            {
+                label: 'prove',
+                kind: 'keyword',
+                detail: 'Probar fórmula desde premisas',
+                insertText: 'prove ${1:formula} from {${2:premises}}',
+            },
+            {
+                label: 'countermodel',
+                kind: 'keyword',
+                detail: 'Buscar contramodelo (asignación que falsifica)',
+                insertText: 'countermodel ${1:formula}',
+            },
+            {
+                label: 'refute',
+                kind: 'keyword',
+                detail: 'Refutar fórmula (alias de countermodel)',
+                insertText: 'refute ${1:formula}',
+            },
+            {
+                label: 'truth_table',
+                kind: 'keyword',
+                detail: 'Generar tabla de verdad completa',
+                insertText: 'truth_table ${1:formula}',
+            },
+            {
+                label: 'explain',
+                kind: 'keyword',
+                detail: 'Explicar fórmula paso a paso',
+                insertText: 'explain ${1:formula}',
+            },
+            {
+                label: 'analyze',
+                kind: 'keyword',
+                detail: 'Analizar argumento (detectar falacias)',
+                insertText: 'analyze {${1:premises}} -> ${2:conclusion}',
+            },
+            // ── Alias en español ────────────────────────────────────────
+            {
+                label: 'axioma',
+                kind: 'keyword',
+                detail: 'Declarar axioma (español)',
+                insertText: 'axioma ${1:nombre} : ${2:formula}',
+            },
+            {
+                label: 'teorema',
+                kind: 'keyword',
+                detail: 'Declarar teorema (español)',
+                insertText: 'teorema ${1:nombre} : ${2:formula}',
+            },
+            {
+                label: 'premisa',
+                kind: 'keyword',
+                detail: 'Registrar premisa temporal (español)',
+                insertText: 'premisa ${1:formula}',
+            },
+            {
+                label: 'por_tanto',
+                kind: 'keyword',
+                detail: 'Cerrar premisas y demostrar meta (español)',
+                insertText: 'por_tanto ${1:formula}',
+            },
+            {
+                label: 'derivar',
+                kind: 'keyword',
+                detail: 'Derivar fórmula (español)',
+                insertText: 'derivar ${1:formula} desde {${2:premisas}}',
+            },
+            {
+                label: 'verificar valido',
+                kind: 'keyword',
+                detail: 'Verificar validez (español)',
+                insertText: 'verificar valido ${1:formula}',
+            },
+            {
+                label: 'verificar satisfacible',
+                kind: 'keyword',
+                detail: 'Verificar satisfacibilidad (español)',
+                insertText: 'verificar satisfacible ${1:formula}',
+            },
+            {
+                label: 'probar',
+                kind: 'keyword',
+                detail: 'Probar fórmula (español)',
+                insertText: 'probar ${1:formula}',
+            },
+            {
+                label: 'contramodelo',
+                kind: 'keyword',
+                detail: 'Buscar contramodelo (español)',
+                insertText: 'contramodelo ${1:formula}',
+            },
+            {
+                label: 'refutar',
+                kind: 'keyword',
+                detail: 'Refutar fórmula (español)',
+                insertText: 'refutar ${1:formula}',
+            },
+            {
+                label: 'tabla_verdad',
+                kind: 'keyword',
+                detail: 'Tabla de verdad (español)',
+                insertText: 'tabla_verdad ${1:formula}',
+            },
+            {
+                label: 'explicar',
+                kind: 'keyword',
+                detail: 'Explicar fórmula (español)',
+                insertText: 'explicar ${1:formula}',
+            },
+            {
+                label: 'analizar',
+                kind: 'keyword',
+                detail: 'Analizar argumento (español)',
+                insertText: 'analizar {${1:premisas}} -> ${2:conclusion}',
+            },
+            {
+                label: 'paratodo',
+                kind: 'operator',
+                detail: 'Cuantificador universal ∀ (español)',
+                insertText: 'paratodo ${1:x} (${2:formula})',
+            },
+            {
+                label: 'existe',
+                kind: 'operator',
+                detail: 'Cuantificador existencial ∃ (español)',
+                insertText: 'existe ${1:x} (${2:formula})',
+            },
+            // ── Capa textual ────────────────────────────────────────────
+            {
+                label: 'passage',
+                kind: 'keyword',
+                detail: 'Declarar pasaje de texto',
+                insertText: 'passage([[${1:path}]])',
+            },
+            {
+                label: 'formalize',
+                kind: 'keyword',
+                detail: 'Formalizar pasaje como fórmula',
+                insertText: 'formalize ${1:passage} as ${2:formula}',
+            },
+            {
+                label: 'claim',
+                kind: 'keyword',
+                detail: 'Declarar claim (afirmación)',
+                insertText: 'claim ${1:name} = ${2:value}',
+            },
+            {
+                label: 'support',
+                kind: 'keyword',
+                detail: 'Registrar soporte para claim',
+                insertText: 'support ${1:claim} <- ${2:source}',
+            },
+            {
+                label: 'confidence',
+                kind: 'keyword',
+                detail: 'Asignar confianza a claim (0-1)',
+                insertText: 'confidence ${1:claim} = ${2:value}',
+            },
+            {
+                label: 'context',
+                kind: 'keyword',
+                detail: 'Registrar contexto de un claim',
+                insertText: 'context ${1:claim} = "${2:text}"',
+            },
+            // ── Operadores modales (modal.k) ────────────────────────────
+            {
+                label: '[]',
+                kind: 'operator',
+                detail: 'Necesidad modal (□) — "necesariamente"',
+                insertText: '[](${1:formula})',
+            },
+            {
+                label: '<>',
+                kind: 'operator',
+                detail: 'Posibilidad modal (◇) — "posiblemente"',
+                insertText: '<>(${1:formula})',
+            },
+            // ── Cuantificadores FOL (classical.first_order) ─────────────
+            {
+                label: 'forall',
+                kind: 'operator',
+                detail: 'Cuantificador universal (∀x)',
+                insertText: 'forall ${1:x} (${2:formula})',
+            },
+            {
+                label: 'exists',
+                kind: 'operator',
+                detail: 'Cuantificador existencial (∃x)',
+                insertText: 'exists ${1:x} (${2:formula})',
+            },
+            // ── Operadores lógicos ──────────────────────────────────────
+            {
+                label: '->',
+                kind: 'operator',
+                detail: 'Implicación (→)',
+                insertText: '${1:A} -> ${2:B}',
+            },
+            {
+                label: '<->',
+                kind: 'operator',
+                detail: 'Bicondicional (↔)',
+                insertText: '${1:A} <-> ${2:B}',
+            },
+            {
+                label: '&',
+                kind: 'operator',
+                detail: 'Conjunción (∧)',
+                insertText: '${1:A} & ${2:B}',
+            },
+            {
+                label: '|',
+                kind: 'operator',
+                detail: 'Disyunción (∨)',
+                insertText: '${1:A} | ${2:B}',
+            },
+            {
+                label: '!',
+                kind: 'operator',
+                detail: 'Negación (¬)',
+                insertText: '!${1:A}',
+            },
+            {
+                label: '^',
+                kind: 'operator',
+                detail: 'XOR (⊕) — disyunción exclusiva',
+                insertText: '${1:A} ^ ${2:B}',
+            },
+            {
+                label: '!&',
+                kind: 'operator',
+                detail: 'NAND (↑) — negación alternativa',
+                insertText: '${1:A} !& ${2:B}',
+            },
+            {
+                label: '!|',
+                kind: 'operator',
+                detail: 'NOR (↓) — negación conjunta',
+                insertText: '${1:A} !| ${2:B}',
+            },
+            {
+                label: 'xor',
+                kind: 'operator',
+                detail: 'XOR (texto)',
+                insertText: '${1:A} xor ${2:B}',
+            },
+            {
+                label: 'nand',
+                kind: 'operator',
+                detail: 'NAND (texto)',
+                insertText: '${1:A} nand ${2:B}',
+            },
+            {
+                label: 'nor',
+                kind: 'operator',
+                detail: 'NOR (texto)',
+                insertText: '${1:A} nor ${2:B}',
+            },
+            // ── Renderizado ─────────────────────────────────────────────
+            {
+                label: 'render',
+                kind: 'keyword',
+                detail: 'Renderizar salida en formato markdown/json',
+                insertText: 'render',
+            },
+            {
+                label: 'render glossary',
+                kind: 'keyword',
+                detail: 'Renderizar glosario de definiciones activas',
+                insertText: 'render glossary',
+            },
+            {
+                label: 'render analysis',
+                kind: 'keyword',
+                detail: 'Renderizar análisis completo del script',
+                insertText: 'render analysis',
+            },
+            // ── v3: Definitions, Sources, Interpretation ────────────────
+            {
+                label: 'define',
+                kind: 'keyword',
+                detail: 'Definir macro semántica expandible',
+                documentation: 'Define una abreviatura o macro que puede expandirse con `unfold` y contraerse con `fold`.',
+                insertText: 'define ${1:Name}(${2:x}) := ${3:formula}',
+            },
+            {
+                label: 'definir',
+                kind: 'keyword',
+                detail: 'Definir macro semántica (español)',
+                insertText: 'definir ${1:Nombre}(${2:x}) := ${3:formula}',
+            },
+            {
+                label: 'define @',
+                kind: 'keyword',
+                detail: 'Definir macro con descripción',
+                insertText: 'define ${1:Name}(${2:x}) := ${3:formula} @ "${4:descripción}"',
+            },
+            {
+                label: 'unfold',
+                kind: 'keyword',
+                detail: 'Expandir definición (despliega la macro)',
+                insertText: 'unfold ${1:formula}',
+            },
+            {
+                label: 'desplegar',
+                kind: 'keyword',
+                detail: 'Expandir definición (español)',
+                insertText: 'desplegar ${1:formula}',
+            },
+            {
+                label: 'fold',
+                kind: 'keyword',
+                detail: 'Contraer fórmula (pliega hacia la definición)',
+                insertText: 'fold ${1:formula}',
+            },
+            {
+                label: 'plegar',
+                kind: 'keyword',
+                detail: 'Contraer fórmula (español)',
+                insertText: 'plegar ${1:formula}',
+            },
+            {
+                label: 'source',
+                kind: 'keyword',
+                detail: 'Declarar fuente bibliográfica',
+                documentation: 'Registra una referencia académica con campos clave-valor.',
+                insertText: 'source ${1:Name} {\n  author: "${2:autor}",\n  year: ${3:2024}\n}',
+            },
+            {
+                label: 'fuente',
+                kind: 'keyword',
+                detail: 'Declarar fuente bibliográfica (español)',
+                insertText: 'fuente ${1:Nombre} {\n  author: "${2:autor}",\n  year: ${3:2024}\n}',
+            },
+            {
+                label: 'interpret',
+                kind: 'keyword',
+                detail: 'Interpretar texto como fórmula lógica',
+                documentation: 'Asigna una lectura formal a un fragmento de texto o pasaje.',
+                insertText: 'interpret "${1:texto}" as ${2:formula}',
+            },
+            {
+                label: 'interpretar',
+                kind: 'keyword',
+                detail: 'Interpretar texto como fórmula (español)',
+                insertText: 'interpretar "${1:texto}" como ${2:formula}',
+            },
+            {
+                label: 'glossary',
+                kind: 'keyword',
+                detail: 'Mostrar glosario de definiciones activas',
+                insertText: 'glossary',
+            },
+            {
+                label: 'glosario',
+                kind: 'keyword',
+                detail: 'Mostrar glosario (español)',
+                insertText: 'glosario',
+            },
+            {
+                label: 'description @',
+                kind: 'keyword',
+                detail: 'Añadir descripción a define con @',
+                insertText: '@ "${1:descripción del concepto}"',
+            },
+            // ── Operadores deónticos (deontic.standard) ─────────────────
+            {
+                label: '[] (obligación)',
+                kind: 'operator',
+                detail: 'O(φ) = Obligación — "es obligatorio que φ" (lógica deóntica)',
+                insertText: '[](${1:formula})',
+            },
+            {
+                label: '<> (permisión)',
+                kind: 'operator',
+                detail: 'P(φ) = Permisión — "está permitido que φ" (lógica deóntica)',
+                insertText: '<>(${1:formula})',
+            },
+            {
+                label: '[]! (prohibición)',
+                kind: 'operator',
+                detail: 'F(φ) = Prohibición — "está prohibido que φ" = O(¬φ)',
+                insertText: '[](!${1:formula})',
+            },
+            // ── Operadores epistémicos (epistemic.s5) ──────────────────
+            {
+                label: '[] (conocimiento)',
+                kind: 'operator',
+                detail: 'K(φ) = Conocimiento — "se sabe que φ" (epistémica S5)',
+                insertText: '[](${1:formula})',
+            },
+            {
+                label: '<> (creencia)',
+                kind: 'operator',
+                detail: 'B(φ) = Creencia compatible — "es compatible con lo que se sabe" (epistémica S5)',
+                insertText: '<>(${1:formula})',
+            },
+            // ── Operadores temporales (temporal.ltl) ────────────────────
+            {
+                label: '[] (Globally)',
+                kind: 'operator',
+                detail: 'G(φ) = Globally — "siempre φ" (LTL temporal)',
+                insertText: '[](${1:formula})',
+            },
+            {
+                label: '<> (Finally)',
+                kind: 'operator',
+                detail: 'F(φ) = Finally — "eventualmente φ" (LTL temporal)',
+                insertText: '<>(${1:formula})',
+            },
+            {
+                label: 'next',
+                kind: 'operator',
+                detail: 'X(φ) = Next — "en el siguiente estado φ" (LTL temporal)',
+                insertText: 'next (${1:formula})',
+            },
+            {
+                label: 'until',
+                kind: 'operator',
+                detail: 'φ U ψ = Until — "φ vale hasta que ψ" (LTL temporal)',
+                insertText: '${1:A} until ${2:B}',
+            },
+            // ── Import ──────────────────────────────────────────────────
+            {
+                label: 'import',
+                kind: 'keyword',
+                detail: 'Importar archivo .st externo',
+                insertText: 'import "${1:path.st}"',
+            },
+            {
+                label: 'importar',
+                kind: 'keyword',
+                detail: 'Importar archivo .st (español)',
+                insertText: 'importar "${1:ruta.st}"',
+            },
+            {
+                label: 'export',
+                kind: 'keyword',
+                detail: 'Exportar declaración',
+                insertText: 'export ',
+            },
+            {
+                label: 'exportar',
+                kind: 'keyword',
+                detail: 'Exportar declaración (español)',
+                insertText: 'exportar ',
+            },
+            // ── Proof blocks ────────────────────────────────────────────
+            {
+                label: 'assume',
+                kind: 'keyword',
+                detail: 'Asumir hipótesis para proof block',
+                insertText: 'assume ${1:name} : ${2:formula}',
+            },
+            {
+                label: 'asumir',
+                kind: 'keyword',
+                detail: 'Asumir hipótesis (español)',
+                insertText: 'asumir ${1:nombre} : ${2:formula}',
+            },
+            {
+                label: 'show',
+                kind: 'keyword',
+                detail: 'Declarar goal de un proof block',
+                insertText: 'show ${1:formula}',
+            },
+            {
+                label: 'demostrar',
+                kind: 'keyword',
+                detail: 'Declarar goal de un proof block (español)',
+                insertText: 'demostrar ${1:formula}',
+            },
+            {
+                label: 'qed',
+                kind: 'keyword',
+                detail: 'Cerrar proof block',
+                insertText: 'qed',
+            },
+            // ── Theory blocks (OOP) ─────────────────────────────────────
+            {
+                label: 'theory',
+                kind: 'keyword',
+                detail: 'Declarar bloque de teoría (encapsula axiomas, let, teoremas)',
+                insertText: 'theory ${1:Name}(${2:params}) {\n  ${3}\n}',
+            },
+            {
+                label: 'teoria',
+                kind: 'keyword',
+                detail: 'Declarar bloque de teoría (español)',
+                insertText: 'teoria ${1:Nombre}(${2:parametros}) {\n  ${3}\n}',
+            },
+            {
+                label: 'theory extends',
+                kind: 'keyword',
+                detail: 'Declarar teoría que hereda de otra (herencia OOP)',
+                insertText: 'theory ${1:Child} extends ${2:Parent} {\n  ${3}\n}',
+            },
+            {
+                label: 'teoria extiende',
+                kind: 'keyword',
+                detail: 'Declarar teoría con herencia (español)',
+                insertText: 'teoria ${1:Hijo} extiende ${2:Padre} {\n  ${3}\n}',
+            },
+            {
+                label: 'private',
+                kind: 'keyword',
+                detail: 'Miembro privado de teoría (no accesible via dot notation)',
+                insertText: 'private ${1:statement}',
+            },
+            {
+                label: 'privado',
+                kind: 'keyword',
+                detail: 'Miembro privado de teoría (español)',
+                insertText: 'privado ${1:statement}',
+            },
+            // ── Programación y control de flujo ───────────────────────
+            {
+                label: 'print',
+                kind: 'keyword',
+                detail: 'Imprimir texto o fórmulas durante la ejecución',
+                documentation: 'Úsalo para inspeccionar valores intermedios, resultados o mensajes del script.',
+                insertText: 'print ${1:value}',
+            },
+            {
+                label: 'imprimir',
+                kind: 'keyword',
+                detail: 'Imprimir texto o fórmulas (español)',
+                insertText: 'imprimir ${1:valor}',
+            },
+            {
+                label: 'set',
+                kind: 'keyword',
+                detail: 'Reasignar una variable o alias',
+                documentation: 'Actualiza un valor en tiempo de ejecución, útil dentro de loops y funciones.',
+                insertText: 'set ${1:name} = ${2:value}',
+            },
+            {
+                label: 'asignar',
+                kind: 'keyword',
+                detail: 'Reasignar una variable o alias (español)',
+                insertText: 'asignar ${1:nombre} = ${2:valor}',
+            },
+            {
+                label: 'if',
+                kind: 'keyword',
+                detail: 'Condicional ST con rama else',
+                documentation: 'Evalúa condiciones como `valid`, `invalid`, `satisfiable` o `unsatisfiable` y ejecuta bloques según el resultado.',
+                insertText: 'if ${1:valid} ${2:formula} {\n  ${3}\n} else {\n  ${4}\n}',
+            },
+            {
+                label: 'si',
+                kind: 'keyword',
+                detail: 'Condicional ST con rama sino (español)',
+                insertText: 'si ${1:valido} ${2:formula} {\n  ${3}\n} sino {\n  ${4}\n}',
+            },
+            {
+                label: 'for',
+                kind: 'keyword',
+                detail: 'Bucle sobre colección de valores o fórmulas',
+                insertText: 'for ${1:item} in {${2:items}} {\n  ${3}\n}',
+            },
+            {
+                label: 'para',
+                kind: 'keyword',
+                detail: 'Bucle sobre colección (español)',
+                insertText: 'para ${1:item} en {${2:items}} {\n  ${3}\n}',
+            },
+            {
+                label: 'while',
+                kind: 'keyword',
+                detail: 'Bucle condicionado',
+                insertText: 'while ${1:valid} ${2:formula} {\n  ${3}\n}',
+            },
+            {
+                label: 'mientras',
+                kind: 'keyword',
+                detail: 'Bucle condicionado (español)',
+                insertText: 'mientras ${1:valido} ${2:formula} {\n  ${3}\n}',
+            },
+            {
+                label: 'fn',
+                kind: 'keyword',
+                detail: 'Declarar función con parámetros y retorno',
+                insertText: 'fn ${1:name}(${2:params}) {\n  ${3}\n  return ${4:result}\n}',
+            },
+            {
+                label: 'funcion',
+                kind: 'keyword',
+                detail: 'Declarar función con parámetros y retorno (español)',
+                insertText: 'funcion ${1:nombre}(${2:parametros}) {\n  ${3}\n  retornar ${4:resultado}\n}',
+            },
+            {
+                label: 'return',
+                kind: 'keyword',
+                detail: 'Retornar un valor desde una función',
+                insertText: 'return ${1:value}',
+            },
+            {
+                label: 'retornar',
+                kind: 'keyword',
+                detail: 'Retornar un valor desde una función (español)',
+                insertText: 'retornar ${1:valor}',
+            },
+            // ── Aritmética ────────────────────────────────────────────
+            {
+                label: '+',
+                kind: 'operator',
+                detail: 'Suma dos expresiones numéricas',
+                insertText: '${1:a} + ${2:b}',
+            },
+            {
+                label: '-',
+                kind: 'operator',
+                detail: 'Resta dos expresiones numéricas',
+                insertText: '${1:a} - ${2:b}',
+            },
+            {
+                label: '*',
+                kind: 'operator',
+                detail: 'Multiplicación numérica',
+                insertText: '${1:a} * ${2:b}',
+            },
+            {
+                label: '/',
+                kind: 'operator',
+                detail: 'División numérica',
+                insertText: '${1:a} / ${2:b}',
+            },
+            {
+                label: '%',
+                kind: 'operator',
+                detail: 'Residuo de división entera',
+                insertText: '${1:a} % ${2:b}',
+            },
+            {
+                label: '<',
+                kind: 'operator',
+                detail: 'Comparación menor que',
+                insertText: '${1:a} < ${2:b}',
+            },
+            {
+                label: '>',
+                kind: 'operator',
+                detail: 'Comparación mayor que',
+                insertText: '${1:a} > ${2:b}',
+            },
+            {
+                label: '<=',
+                kind: 'operator',
+                detail: 'Comparación menor o igual que',
+                insertText: '${1:a} <= ${2:b}',
+            },
+            {
+                label: '>=',
+                kind: 'operator',
+                detail: 'Comparación mayor o igual que',
+                insertText: '${1:a} >= ${2:b}',
+            },
+        ];
+        return { id: request.id, result: items };
+    }
+    handleRender(request) {
+        const source = this.requireStringParam(request, 'source');
+        const format = this.optionalStringParam(request, 'format', 'markdown');
+        const file = this.optionalStringParam(request, 'file', '<stdin>');
+        const output = new interpreter_1.Interpreter().execute(source, file);
+        const rendered = this.renderOutput(output, format);
+        return {
+            id: request.id,
+            result: { rendered, format },
+            diagnostics: output.diagnostics,
+        };
+    }
+    getStatementHoverInfo(stmt, _letDefs) {
+        switch (stmt.kind) {
+            case 'axiom_decl':
+                return {
+                    content: `**Axioma** \`${stmt.name}\` = ${(0, propositional_1.formulaToString)(stmt.formula)}`,
+                    range: stmt.source,
+                };
+            case 'theorem_decl':
+                return {
+                    content: `**Teorema** \`${stmt.name}\` = ${(0, propositional_1.formulaToString)(stmt.formula)}`,
+                    range: stmt.source,
+                };
+            case 'claim_decl':
+                return { content: `**Claim** \`${stmt.name}\``, range: stmt.source };
+            case 'let_decl': {
+                let content = `**Let** \`${stmt.name}\``;
+                if (stmt.letType === 'description') {
+                    content += `\n\n📝 *"${stmt.description}"*`;
+                }
+                else if (stmt.letType === 'formula') {
+                    content += ` = \`${(0, propositional_1.formulaToString)(stmt.formula)}\``;
+                    const desc = 'description' in stmt ? stmt.description : undefined;
+                    if (desc)
+                        content += `\n\n📝 *"${desc}"*`;
+                }
+                else if (stmt.letType === 'passage') {
+                    content += ` = passage([[${stmt.anchorPath}]])`;
+                }
+                return { content, range: stmt.source };
+            }
+            case 'theory_decl': {
+                const theoryStmt = stmt;
+                const parentStr = theoryStmt.parent ? ` extends \`${theoryStmt.parent}\`` : '';
+                const pubCount = theoryStmt.members.filter((m) => m.visibility === 'public').length;
+                const privCount = theoryStmt.members.filter((m) => m.visibility === 'private').length;
+                let content = `**Theory** \`${theoryStmt.name}\`${parentStr}\n\n`;
+                content += `📦 ${pubCount} miembros públicos`;
+                if (privCount > 0)
+                    content += `, 🔒 ${privCount} privados`;
+                return { content, range: stmt.source };
+            }
+            case 'define_decl': {
+                let content = `**Define** \`${stmt.name}\``;
+                if (stmt.params && stmt.params.length > 0)
+                    content += `(${stmt.params.join(', ')})`;
+                content += ` := \`${(0, propositional_1.formulaToString)(stmt.body)}\``;
+                if (stmt.description)
+                    content += `\n\n📝 *"${stmt.description}"*`;
+                return { content, range: stmt.source };
+            }
+            case 'source_decl': {
+                const fieldsStr = stmt.fields.map((f) => `${f.key}: ${f.value}`).join(', ');
+                return {
+                    content: `**Source** \`${stmt.name}\`\n\n📖 ${fieldsStr}`,
+                    range: stmt.source,
+                };
+            }
+            case 'interpret_cmd': {
+                return {
+                    content: `**Interpret** "${stmt.text}"\n\n🔢 \`${(0, propositional_1.formulaToString)(stmt.formula)}\``,
+                    range: stmt.source,
+                };
+            }
+            case 'fn_decl': {
+                return {
+                    content: `**Función** \`${stmt.name}(${stmt.params.join(', ')})\`\n\n${stmt.body.length} statements`,
+                    range: stmt.source,
+                };
+            }
+            default:
+                return null;
+        }
+    }
+    renderOutput(output, format) {
+        if (format === 'json') {
+            return JSON.stringify(output, null, 2);
+        }
+        // Default: markdown
+        let md = '';
+        if (output.stdout) {
+            md += output.stdout;
+        }
+        if (output.diagnostics && output.diagnostics.length > 0) {
+            md += '\n\n## Diagnosticos\n\n';
+            for (const d of output.diagnostics) {
+                md += `- **${d.severity}**: ${d.message}`;
+                if (d.line)
+                    md += ` (linea ${d.line})`;
+                md += '\n';
+            }
+        }
+        return md;
+    }
+    requireParamsObject(request) {
+        if (!request.params || typeof request.params !== 'object' || Array.isArray(request.params)) {
+            throw new Error(`Parametros invalidos para '${request.method}': se esperaba un objeto.`);
+        }
+        return request.params;
+    }
+    requireStringParam(request, key) {
+        const params = this.requireParamsObject(request);
+        const value = params[key];
+        if (typeof value !== 'string' || value.trim() === '') {
+            throw new Error(`Parametro invalido para '${request.method}': '${key}' debe ser una cadena no vacia.`);
+        }
+        return value;
+    }
+    optionalStringParam(request, key, fallback) {
+        const params = this.requireParamsObject(request);
+        const value = params[key];
+        if (value === undefined || value === null || value === '')
+            return fallback;
+        if (typeof value !== 'string') {
+            throw new Error(`Parametro invalido para '${request.method}': '${key}' debe ser una cadena.`);
+        }
+        return value;
+    }
+    requireIntegerParam(request, key) {
+        const params = this.requireParamsObject(request);
+        const value = params[key];
+        if (!Number.isInteger(value) || Number(value) < 1) {
+            throw new Error(`Parametro invalido para '${request.method}': '${key}' debe ser un entero positivo.`);
+        }
+        return Number(value);
+    }
+}
+exports.ProtocolHandler = ProtocolHandler;
+//# sourceMappingURL=handler.js.map
