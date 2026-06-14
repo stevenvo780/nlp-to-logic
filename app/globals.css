@@ -1,25 +1,27 @@
 @import "tailwindcss";
 
-/* ── Tokens canonicos de marca (teal + dorado) ───────────────────────────── */
+/* ── Tokens Cloud Atlas (modo oscuro) ────────────────────────────────────── */
 :root,
 [data-theme="dark"] {
-  --bg: #0A0F1A;
-  --surface: #0F1726;
-  --surface-2: #16213A;
-  --border: #243049;
-  --text: #E9EEF6;
-  --text-muted: #A2B3C9;
-  --primary: #2DD4BF;
-  --primary-strong: #14B8A6;
-  --on-primary: #07241F;
-  --accent: #F0C453;
-  --accent-strong: #E0A82E;
-  --on-accent: #231A05;
-  --link: #5EEAD4;
-  --ring: #2DD4BF;
+  --bg: #0b1417;
+  --surface: #0f1c20;
+  --surface-2: #11211f;
+  --border: rgba(243,236,224,0.10);
+  --text: #f3ece0;
+  --text-muted: #c9c2b6;
+  --primary: #43b5a6;
+  --primary-strong: #2f8478;
+  --on-primary: #071a17;
+  --accent: #e0a85e;
+  --accent-strong: #cf6a3c;
+  --on-accent: #1e0f00;
+  --link: #6fd3c4;
+  --ring: #43b5a6;
   --success: #34D399;
   --warning: #FBBF24;
   --danger: #F87171;
+  /* gradiente-firma Cloud Atlas */
+  --gradient-brand: linear-gradient(110deg,#e0a85e 0%,#cf6a3c 35%,#43b5a6 100%);
 }
 
 /* Aliases de compatibilidad para las clases Tailwind existentes */
@@ -30,9 +32,9 @@
   --panel-2: var(--surface-2);
   --foreground: var(--text);
   --muted: var(--text-muted);
-  /* accent en el codigo = primary teal (#2DD4BF) */
+  /* accent en el codigo = primary teal (#43b5a6 Cloud Atlas) */
   --accent-ui: var(--primary);
-  /* accent-2 en el codigo = dorado (#F0C453) */
+  /* accent-2 en el codigo = dorado (#e0a85e Cloud Atlas) */
   --accent-2-ui: var(--accent);
   --ok: var(--success);
   --warn: var(--warning);
