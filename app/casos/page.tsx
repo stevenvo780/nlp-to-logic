@@ -2,9 +2,28 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Casos validados — Órganon | lenguaje natural → lógica formal',
+  title: 'Casos validados — Órganon · Mouseîon',
   description:
-    '11 casos dificiles validados de la suite de tests de auto.logic en Órganon: texto natural en espanol → logica formal ST ejecutable. Cubre proposicional, deontica, aristotelica, epistemica, temporal y aritmetica.',
+    '11 casos difíciles validados de NLP a lógica formal en Órganon: texto en español a ST ejecutable. Cubre proposicional, deóntica, aristotélica, epistémica, temporal y aritmética.',
+  alternates: {
+    canonical: 'https://organon.stevenvallejo.com/casos',
+  },
+  openGraph: {
+    type: 'website',
+    url: 'https://organon.stevenvallejo.com/casos',
+    siteName: 'Mouseîon',
+    title: 'Casos validados — Órganon · Mouseîon',
+    description:
+      '11 casos difíciles validados de NLP a lógica formal en Órganon: texto en español a ST ejecutable.',
+    locale: 'es_ES',
+    images: [{ url: 'https://organon.stevenvallejo.com/og-image.png', width: 1200, height: 630, alt: 'Órganon — NLP a lógica formal · Mouseîon' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Casos validados — Órganon · Mouseîon',
+    description: '11 casos difíciles validados de NLP a lógica formal en Órganon.',
+    images: ['https://organon.stevenvallejo.com/og-image.png'],
+  },
 };
 
 export default function CasosPage() {

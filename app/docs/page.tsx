@@ -2,9 +2,28 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Documentacion — ST Language | Órganon',
+  title: 'Documentación ST — Órganon · Mouseîon',
   description:
-    'Referencia del lenguaje ST: sintaxis, perfiles logicos, comandos de derivacion, scripting y API programatica. El motor detras de Órganon (lenguaje natural → lógica formal).',
+    'Referencia del lenguaje ST: 11 perfiles lógicos, SAT solver CDCL propio, comandos de derivación, scripting y API programática. El motor detrás de Órganon.',
+  alternates: {
+    canonical: 'https://organon.stevenvallejo.com/docs',
+  },
+  openGraph: {
+    type: 'website',
+    url: 'https://organon.stevenvallejo.com/docs',
+    siteName: 'Mouseîon',
+    title: 'Documentación ST — Órganon · Mouseîon',
+    description:
+      'Referencia del lenguaje ST: 11 perfiles lógicos, SAT solver CDCL propio, comandos de derivación, scripting y API programática.',
+    locale: 'es_ES',
+    images: [{ url: 'https://organon.stevenvallejo.com/og-image.png', width: 1200, height: 630, alt: 'Órganon — NLP a lógica formal · Mouseîon' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Documentación ST — Órganon · Mouseîon',
+    description: 'Referencia del lenguaje ST: 11 perfiles lógicos, SAT CDCL propio, API programática.',
+    images: ['https://organon.stevenvallejo.com/og-image.png'],
+  },
 };
 
 export default function DocsPage() {
