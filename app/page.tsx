@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import Playground from '@/components/Playground';
 
 // useSearchParams en Playground require que la pagina no sea estatica
@@ -11,6 +12,36 @@ export default function Home() {
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <header className="mb-8">
+        {/* Wordmark bar */}
+        <div className="mb-4 flex items-center">
+          <a
+            href="https://www.stevenvallejo.com"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-2 no-underline hover:opacity-80 transition-opacity"
+            aria-label="Steven Vallejo — portal principal"
+          >
+            <Image
+              src="/favicon.svg"
+              alt="Steven Vallejo lemniscata"
+              width={26}
+              height={26}
+              priority
+            />
+            <span
+              style={{
+                fontFamily: 'var(--font-inter), Inter, system-ui, sans-serif',
+                fontWeight: 600,
+                fontSize: '1rem',
+                color: 'var(--text)',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              Steven Vallejo
+            </span>
+          </a>
+        </div>
+
         <nav className="mb-6 flex flex-wrap items-center gap-4 text-sm">
           <span className="rounded-md bg-accent/10 px-2 py-1 font-mono text-xs text-accent">
             nlp → logic
@@ -159,7 +190,7 @@ export default function Home() {
       </section>
 
       <footer className="mt-12 border-t border-border pt-6 text-sm text-muted">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-6">
           <Link href="/casos" className="hover:text-foreground">
             Casos validados
           </Link>
@@ -183,8 +214,52 @@ export default function Home() {
             github.com/stevenvo780/auto.logic ↗
           </a>
           <span className="ml-auto">
-            Steven Vallejo · ST {STLANG_VERSION} · autologic {AUTOLOGIC_VERSION}
+            ST {STLANG_VERSION} · autologic {AUTOLOGIC_VERSION}
           </span>
+        </div>
+
+        {/* Ecosistema Steven Vallejo */}
+        <div
+          className="border-t border-border pt-4"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <p className="mb-2 text-xs" style={{ color: 'var(--primary)' }}>
+            Parte del ecosistema de Steven Vallejo
+          </p>
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
+            <a
+              href="https://www.stevenvallejo.com/es#filosofia"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-foreground transition-colors"
+            >
+              Filosofia
+            </a>
+            <a
+              href="https://www.stevenvallejo.com/es#ciencias"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-foreground transition-colors"
+            >
+              Ciencias
+            </a>
+            <a
+              href="https://www.stevenvallejo.com/es#informatica"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-foreground transition-colors"
+            >
+              Informatica
+            </a>
+            <a
+              href="https://www.stevenvallejo.com/es#enterprise"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-foreground transition-colors"
+            >
+              Enterprise
+            </a>
+          </div>
         </div>
       </footer>
     </main>
