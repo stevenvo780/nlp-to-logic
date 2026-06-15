@@ -15,9 +15,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "nlp-to-logic — texto natural a logica formal ejecutable",
+  title: "Órganon — lenguaje natural → lógica formal",
   description:
-    "Playground que une ST (lenguaje logico ejecutable, SAT solver CDCL) y autologic (NLP -> logica formal sin IA). Escribe en espanol, ve la formula logica y su resultado de ejecucion.",
+    "Órganon: playground que convierte lenguaje natural a lógica formal ejecutable. Une ST (SAT solver CDCL propio) y autologic (NLP → lógica sin IA). Escribe en español, ve la fórmula lógica y su resultado.",
   icons: {
     icon: [
       { url: "/favicon.svg", type: "image/svg+xml" },

@@ -19,11 +19,11 @@ export default function Home() {
             target="_blank"
             rel="noreferrer"
             className="flex items-center gap-2 no-underline hover:opacity-80 transition-opacity"
-            aria-label="Steven Vallejo — portal principal"
+            aria-label="Órganon — parte de Mouseîon"
           >
             <Image
               src="/favicon.svg"
-              alt="Steven Vallejo lemniscata"
+              alt="Mouseîon lemniscata"
               width={26}
               height={26}
               priority
@@ -37,7 +37,19 @@ export default function Home() {
                 letterSpacing: '-0.01em',
               }}
             >
-              Steven Vallejo
+              Órganon
+            </span>
+            <span
+              style={{
+                fontFamily: 'var(--font-inter), Inter, system-ui, sans-serif',
+                fontWeight: 400,
+                fontSize: '0.7rem',
+                color: 'var(--text-muted)',
+                letterSpacing: '0.02em',
+                marginLeft: '2px',
+              }}
+            >
+              Mouseîon
             </span>
           </a>
         </div>
@@ -74,8 +86,11 @@ export default function Home() {
         </nav>
 
         <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-          De texto natural a logica formal ejecutable
+          Órganon — lenguaje natural → lógica formal
         </h1>
+        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted">
+          Playground interactivo: escribe en español, obtén la fórmula lógica y ejecútala en vivo — sin IA, sin base de datos.
+        </p>
         <p className="mt-3 max-w-3xl text-base leading-relaxed text-muted">
           Escribe un argumento en espanol.{' '}
           <a
@@ -218,13 +233,13 @@ export default function Home() {
           </span>
         </div>
 
-        {/* Ecosistema Steven Vallejo */}
+        {/* Ecosistema Mouseîon */}
         <div
           className="border-t border-border pt-4"
           style={{ color: 'var(--text-muted)' }}
         >
           <p className="mb-2 text-xs" style={{ color: 'var(--primary)' }}>
-            Parte del ecosistema de Steven Vallejo
+            Parte de <strong>Mouseîon</strong> · por Steven Vallejo
           </p>
           <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
             <a

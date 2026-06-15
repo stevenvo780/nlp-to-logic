@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Documentacion — ST Language | nlp-to-logic',
+  title: 'Documentacion — ST Language | Órganon',
   description:
-    'Referencia del lenguaje ST: sintaxis, perfiles logicos, comandos de derivacion, scripting y API programatica. El motor detras del playground nlp-to-logic.',
+    'Referencia del lenguaje ST: sintaxis, perfiles logicos, comandos de derivacion, scripting y API programatica. El motor detras de Órganon (lenguaje natural → lógica formal).',
 };
 
 export default function DocsPage() {
@@ -12,7 +12,7 @@ export default function DocsPage() {
     <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
       <nav className="mb-8 flex items-center gap-2 text-sm text-muted">
         <Link href="/" className="hover:text-foreground">
-          nlp-to-logic
+          Órganon
         </Link>
         <span>/</span>
         <span className="text-foreground">docs</span>
@@ -312,7 +312,7 @@ const result: STEvalResult = evaluate(source);
           >
             Repositorio ST ↗
           </a>
-          <span className="ml-auto">Steven Vallejo · ST v4.15 · 6333 tests</span>
+          <span className="ml-auto">Órganon · ST v4.15 · 6333 tests · por Steven Vallejo</span>
         </div>
       </footer>
     </main>

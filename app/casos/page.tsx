@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Casos validados — NLP → Logica | nlp-to-logic',
+  title: 'Casos validados — Órganon | lenguaje natural → lógica formal',
   description:
-    '11 casos dificiles validados de la suite de tests de auto.logic: texto natural en espanol → logica formal ST ejecutable. Cubre proposicional, deontica, aristotelica, epistemica, temporal y aritmetica.',
+    '11 casos dificiles validados de la suite de tests de auto.logic en Órganon: texto natural en espanol → logica formal ST ejecutable. Cubre proposicional, deontica, aristotelica, epistemica, temporal y aritmetica.',
 };
 
 export default function CasosPage() {
@@ -12,7 +12,7 @@ export default function CasosPage() {
     <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       <nav className="mb-8 flex items-center gap-2 text-sm text-muted">
         <Link href="/" className="hover:text-foreground">
-          nlp-to-logic
+          Órganon
         </Link>
         <span>/</span>
         <span className="text-foreground">casos validados</span>
@@ -107,7 +107,7 @@ export default function CasosPage() {
           >
             auto.logic ↗
           </a>
-          <span className="ml-auto">Steven Vallejo · autologic v2.2 · ST v4.15</span>
+          <span className="ml-auto">Órganon · autologic v2.2 · ST v4.15 · por Steven Vallejo</span>
         </div>
       </footer>
     </main>
