@@ -20,8 +20,8 @@ export const metadata: Metadata = {
     "Órganon: playground que convierte lenguaje natural a lógica formal ejecutable. Une ST (SAT solver CDCL propio) y autologic (NLP → lógica sin IA). Escribe en español, ve la fórmula lógica y su resultado.",
   icons: {
     icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico", sizes: "48x48" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
     ],
     apple: "/apple-touch-icon.png",
   },
