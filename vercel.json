@@ -2,5 +2,14 @@
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "outputDirectory": ".next",
-  "installCommand": "npm install"
+  "installCommand": "npm install",
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "nlp-to-logic.vercel.app" }],
+      "destination": "https://organon.stevenvallejo.com/$1",
+      "permanent": true,
+      "statusCode": 308
+    }
+  ]
 }

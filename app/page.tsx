@@ -22,7 +22,7 @@ export default function Home() {
             aria-label="Órganon — parte de Mouseîon"
           >
             <Image
-              src="/favicon.svg"
+              src="/icon.svg"
               alt="Mouseîon lemniscata"
               width={26}
               height={26}
@@ -267,12 +267,12 @@ export default function Home() {
               Informatica
             </a>
             <a
-              href="https://www.stevenvallejo.com/es#enterprise"
+              href="https://www.stevenvallejo.com/es#ingenieria"
               target="_blank"
               rel="noreferrer"
               className="hover:text-foreground transition-colors"
             >
-              Enterprise
+              Ingenieria
             </a>
           </div>
         </div>

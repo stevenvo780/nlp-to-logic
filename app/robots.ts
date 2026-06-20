@@ -10,5 +10,6 @@ export default function robots(): MetadataRoute.Robots {
       },
     ],
     sitemap: "https://organon.stevenvallejo.com/sitemap.xml",
+    host: "https://organon.stevenvallejo.com",
   };
 }
