@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import Playground from '@/components/Playground';
 
 // useSearchParams en Playground require que la pagina no sea estatica
@@ -21,12 +20,11 @@ export default function Home() {
             className="flex items-center gap-2 no-underline hover:opacity-80 transition-opacity"
             aria-label="Órganon — parte de Mouseîon"
           >
-            <Image
+            <img
               src="/icon.svg"
               alt="Mouseîon lemniscata"
               width={26}
               height={26}
-              priority
             />
             <span
               style={{
