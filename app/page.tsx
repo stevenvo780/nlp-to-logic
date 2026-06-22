@@ -21,10 +21,11 @@ export default function Home() {
             aria-label="Órganon — parte de Mouseîon"
           >
             <img
-              src="/icon.svg"
+              src="/navbar-logo.png"
               alt="Mouseîon lemniscata"
               width={26}
               height={26}
+              style={{ objectFit: 'contain' }}
             />
             <span
               style={{
