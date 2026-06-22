@@ -1,8 +1,12 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import Playground from '@/components/Playground';
 
 // useSearchParams en Playground require que la pagina no sea estatica
+// Además, force-dynamic en la raíz evita el pre-rendering que dispara el bug de Next.js 15
+// con chunks/611.js en contexto SSR.
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 const STLANG_VERSION = 'v4.15';
 const AUTOLOGIC_VERSION = 'v2.2';
@@ -20,7 +24,7 @@ export default function Home() {
             className="flex items-center gap-2 no-underline hover:opacity-80 transition-opacity"
             aria-label="Órganon — parte de Mouseîon"
           >
-            <img
+            <Image
               src="/navbar-logo.png"
               alt="Mouseîon lemniscata"
               width={26}
