@@ -26,7 +26,7 @@ export default function Home() {
           >
             <Image
               src="/navbar-logo.png"
-              alt="Mouseîon lemniscata"
+              alt="Órganon isotipo"
               width={26}
               height={26}
               style={{ objectFit: 'contain' }}
