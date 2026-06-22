@@ -78,8 +78,9 @@ function PlaygroundInner() {
     <div className="flex flex-col gap-4">
       {/* Controles */}
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-sm text-muted">Perfil logico</label>
+        <label htmlFor="profile-select" className="text-sm text-muted">Perfil logico</label>
         <select
+          id="profile-select"
           value={profile}
           onChange={(e) => setProfile(e.target.value)}
           className="rounded-md border border-border bg-panel-2 px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
@@ -91,8 +92,9 @@ function PlaygroundInner() {
           ))}
         </select>
 
-        <label className="ml-2 text-sm text-muted">Idioma</label>
+        <label htmlFor="language-select" className="ml-2 text-sm text-muted">Idioma</label>
         <select
+          id="language-select"
           value={language}
           onChange={(e) => setLanguage(e.target.value as Language)}
           className="rounded-md border border-border bg-panel-2 px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
@@ -132,6 +134,7 @@ function PlaygroundInner() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             spellCheck={false}
+            aria-label="Texto natural en lenguaje humano"
             className="thin-scroll h-72 w-full resize-none rounded-md border border-border bg-panel-2 p-3 font-sans text-sm leading-relaxed text-foreground outline-none focus:border-accent"
             placeholder="Escribe un argumento en lenguaje natural..."
           />

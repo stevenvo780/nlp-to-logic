@@ -499,4 +499,4 @@ La extensión oficial en `editors/vscode-st` aporta:
 
 ## Licencia
 
-MIT © [Steven Velez](https://github.com/stevenvo780) | Developed by [Humanizar](https://github.com/humanizar)
+MIT © [Steven Velez](https://github.com/stevenvo780) | Developed by [Steven Vallejo](https://github.com/stevenvo780)
