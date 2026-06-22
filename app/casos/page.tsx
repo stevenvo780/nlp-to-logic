@@ -47,12 +47,12 @@ export default function CasosPage() {
           </span>
         </div>
         <h1 className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-          Casos validados — NLP a logica formal
+          Casos validados — NLP a lógica formal
         </h1>
         <p className="mt-3 max-w-3xl text-base leading-relaxed text-muted">
-          Estos son argumentos reales (juridicos, filosoficos, matematicos) formalizados
-          automaticamente por <strong className="text-foreground">autologic</strong> y comparados
-          con la respuesta manual esperada. Todos los casos estan en la suite de tests de
+          Estos son argumentos reales (jurídicos, filosóficos, matemáticos) formalizados
+          automáticamente por <strong className="text-foreground">autologic</strong> y comparados
+          con la respuesta manual esperada. Todos los casos están en la suite de tests de
           auto.logic (<code className="text-accent">docs/validated-hard-cases-comparison.md</code>
           ). Puedes cargar cualquiera en el playground y ejecutarlo en vivo.
         </p>
@@ -67,7 +67,7 @@ export default function CasosPage() {
             href="/docs"
             className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm text-muted transition hover:border-accent hover:text-foreground"
           >
-            Documentacion ST →
+            Documentación ST →
           </Link>
         </div>
       </header>
@@ -80,31 +80,31 @@ export default function CasosPage() {
 
       <section className="mt-12 rounded-lg border border-border bg-panel p-6">
         <h2 className="mb-3 text-lg font-bold text-foreground">
-          Como se generan estos formalizaciones
+          Cómo se generan estas formalizaciones
         </h2>
         <div className="grid grid-cols-1 gap-6 text-sm leading-relaxed text-muted md:grid-cols-3">
           <div>
-            <h3 className="mb-1 font-semibold text-foreground">1. Segmentacion</h3>
+            <h3 className="mb-1 font-semibold text-foreground">1. Segmentación</h3>
             <p>
-              El texto se divide en oraciones y clausulas usando stemmers Snowball y analisis de
-              puntuacion. Cada clausula se clasifica segun su funcion discursiva (premisa,
-              conclusion, negacion, condicional...).
+              El texto se divide en oraciones y cláusulas usando stemmers Snowball y análisis de
+              puntuación. Cada cláusula se clasifica según su función discursiva (premisa,
+              conclusión, negación, condicional...).
             </p>
           </div>
           <div>
-            <h3 className="mb-1 font-semibold text-foreground">2. Deteccion de patrones</h3>
+            <h3 className="mb-1 font-semibold text-foreground">2. Detección de patrones</h3>
             <p>
               ~200 marcadores discursivos en ES/EN (&quot;si... entonces&quot;, &quot;por lo tanto&quot;, &quot;todo&quot;,
-              &quot;ningun&quot;, &quot;es obligatorio&quot;...) activan patrones de inferencia: modus_ponens,
+              &quot;ningún&quot;, &quot;es obligatorio&quot;...) activan patrones de inferencia: modus_ponens,
               hypothetical_syllogism, universal_generalization, etc.
             </p>
           </div>
           <div>
-            <h3 className="mb-1 font-semibold text-foreground">3. Emision ST</h3>
+            <h3 className="mb-1 font-semibold text-foreground">3. Emisión ST</h3>
             <p>
-              Los atomos extraidos se nombran con keywords del texto. Las reglas de inferencia
-              detectadas se traducen a axiomas, derives y checks del perfil logico seleccionado.
-              El resultado es codigo ST ejecutable que produce derivaciones verificables.
+              Los átomos extraídos se nombran con keywords del texto. Las reglas de inferencia
+              detectadas se traducen a axiomas, derives y checks del perfil lógico seleccionado.
+              El resultado es código ST ejecutable que produce derivaciones verificables.
             </p>
           </div>
         </div>
@@ -116,7 +116,7 @@ export default function CasosPage() {
             ← Playground
           </Link>
           <Link href="/docs" className="hover:text-foreground">
-            Documentacion →
+            Documentación →
           </Link>
           <a
             href="https://github.com/stevenvo780/auto.logic"
@@ -222,8 +222,8 @@ const CASOS: Caso[] = [
   {
     id: 'modus-ponens',
     playgroundId: 'modus-ponens',
-    title: 'Modus ponens clasico',
-    description: 'El patron de inferencia mas basico: de A→B y A se derive B. Verificacion de tautologia incluida.',
+    title: 'Modus ponens clásico',
+    description: 'El patrón de inferencia más básico: de A→B y A se deriva B. Verificación de tautología incluida.',
     profile: 'classical.propositional',
     patterns: ['modus_ponens'],
     texto:
@@ -235,13 +235,13 @@ axiom hecho_2 : LLOVIENDO
 
 derive CALLE_MOJA from {regla_1, hecho_2}
 check valid (LLUEVE -> CALLE_MOJA)`,
-    nota: 'El formalizador detecta "si... entonces" como condicional, "está lloviendo" como hecho y "por lo tanto" como marcador de conclusion. Emite derive + check valid.',
+    nota: 'El formalizador detecta "si... entonces" como condicional, "está lloviendo" como hecho y "por lo tanto" como marcador de conclusión. Emite derive + check valid.',
   },
   {
     id: 'modus-tollens',
     playgroundId: 'modus-tollens',
     title: 'Modus tollens',
-    description: 'Negacion del consecuente implica negacion del antecedente: ¬B, A→B ⊢ ¬A.',
+    description: 'Negación del consecuente implica negación del antecedente: ¬B, A→B ⊢ ¬A.',
     profile: 'classical.propositional',
     patterns: ['modus_tollens'],
     texto:
@@ -253,13 +253,13 @@ axiom neg_2   : !(CALLE_MOJA)
 
 derive !(LLUEVE) from {regla_1, neg_2}
 check valid ((LLUEVE -> CALLE_MOJA) & !(CALLE_MOJA) -> !(LLUEVE))`,
-    nota: '"no se moja" activa el extractor de negacion. El formalizador emite axiom neg_N con negacion explicita.',
+    nota: '"no se moja" activa el extractor de negación. El formalizador emite axiom neg_N con negación explícita.',
   },
   {
     id: 'silogismo-hipotetico',
     playgroundId: 'silogismo-hipotetico',
-    title: 'Silogismo hipotetico',
-    description: 'Cadena condicional: A→B, B→C ⊢ A→C. El formalizador detecta el patron hypothetical_syllogism.',
+    title: 'Silogismo hipotético',
+    description: 'Cadena condicional: A→B, B→C ⊢ A→C. El formalizador detecta el patrón hypothetical_syllogism.',
     profile: 'classical.propositional',
     patterns: ['hypothetical_syllogism', 'conditional_chain'],
     texto:
@@ -271,13 +271,13 @@ axiom regla_2 : APRENDO -> APRUEBO_EXAMEN
 
 derive ESTUDIO -> APRUEBO_EXAMEN from {regla_1, regla_2}
 check valid ((ESTUDIO -> APRENDO) & (APRENDO -> APRUEBO_EXAMEN) -> (ESTUDIO -> APRUEBO_EXAMEN))`,
-    nota: 'El patron hypothetical_syllogism encadena dos condicionales. El check valid confirma que la transitividad es una tautologia proposicional.',
+    nota: 'El patrón hypothetical_syllogism encadena dos condicionales. El check valid confirma que la transitividad es una tautología proposicional.',
   },
   {
     id: 'despacho-empresa',
     playgroundId: 'despacho-empresa',
     title: 'Obligacion contractual — despachar equipo',
-    description: 'Cadena condicional de 3 eslabones con conjuncion. Caso juridico real de derecho contractual.',
+    description: 'Cadena condicional de 3 eslabones con conjunción. Caso jurídico real de derecho contractual.',
     profile: 'classical.propositional',
     patterns: ['modus_ponens', 'hypothetical_syllogism', 'conditional_chain', 'conjunction_introduction'],
     texto:
@@ -291,13 +291,13 @@ axiom hecho_9 : APODERADO_VIGENTE
 axiom hecho_10 : PAGO_CONSIGNADO
 
 derive DESPACHAR_EQUIPO from {regla_1, regla_3, regla_5, hecho_9, hecho_10}`,
-    nota: 'Uno de los 11 casos hard validados de auto.logic. El formalizador encadena 3 condicionales con modus ponens repetido y detecta la conjuncion de hechos.',
+    nota: 'Uno de los 11 casos hard validados de auto.logic. El formalizador encadena 3 condicionales con modus ponens repetido y detecta la conjunción de hechos.',
   },
   {
     id: 'deontico-plagio',
     playgroundId: 'deontico-plagio',
     title: 'Plagio academico — obligacion y prohibicion',
-    description: 'Caso de logica deontica: deteccion de plagio activa obligacion de suspension y prohibicion de publicacion.',
+    description: 'Caso de lógica deóntica: detección de plagio activa obligación de suspensión y prohibición de publicación.',
     profile: 'deontic.standard',
     patterns: ['modus_ponens', 'universal_generalization', 'universal_instantiation'],
     texto:
@@ -311,13 +311,13 @@ axiom a8 = O(OBLIGATORIO_EVALUACION_SUSPENDER)
 axiom a10 = PUBLICACION_MANUSCRITO_PROHIBIDO_AUTORIZAR
 
 check valid (AUTORIZACION_EXCEPCIONAL -> P(PERMITIDO_REANUDAR_REVISION))`,
-    nota: 'Caso hard validado. El perfil deontic.standard genera operadores O() (obligacion) y P() (permision). "ningun" activa negacion sobre el cuantificador universal.',
+    nota: 'Caso hard validado. El perfil deontic.standard genera operadores O() (obligación) y P() (permisión). "ningún" activa negación sobre el cuantificador universal.',
   },
   {
     id: 'aristotelico-peritos',
     playgroundId: 'aristotelico-peritos',
-    title: 'Peritos acreditados y dictamenes — silogistica',
-    description: 'Razonamiento juridico aristotelico: universal + negacion + instanciacion multiple sobre suspension de peritos.',
+    title: 'Peritos acreditados y dictámenes — silogística',
+    description: 'Razonamiento jurídico aristotélico: universal + negación + instanciación múltiple sobre suspensión de peritos.',
     profile: 'aristotelian.syllogistic',
     patterns: ['universal_generalization', 'universal_instantiation', 'conjunction_introduction'],
     texto:
@@ -330,13 +330,13 @@ axiom a3 = forall x dictam(x)
 
 derive ACREDITADO_PENALES_NINGUN_PERITO from {a1, a2, a3, ...}
 check valid ((...) -> ACREDITADO_PENALES_NINGUN_PERITO)`,
-    nota: 'Caso hard validado. El formalizador identifica "todo" → forall, "ningun" → negacion universal, y construye la regla de instanciacion universal sobre los atomos extraidos.',
+    nota: 'Caso hard validado. El formalizador identifica "todo" → forall, "ningún" → negación universal, y construye la regla de instanciación universal sobre los átomos extraídos.',
   },
   {
     id: 'epistemico-llave',
     playgroundId: 'epistemico-llave',
     title: 'Llave maestra — conocimiento anidado',
-    description: 'Epistemica S5: conocimiento del administrador sobre acceso, con introspección positiva K(P)→K(K(P)).',
+    description: 'Epistémica S5: conocimiento del administrador sobre acceso, con introspección positiva K(P)→K(K(P)).',
     profile: 'epistemic.s5',
     patterns: ['modus_ponens', 'hypothetical_syllogism'],
     texto:
@@ -347,13 +347,13 @@ axiom a1 = K_admin(LLAVE_ABRE_PUERTAS)
 axiom a2 = K_admin(LLAVE_ABRE_PUERTAS) -> K_admin(PUEDE_ACCEDER_SALA)
 
 derive K_admin(PUEDE_ACCEDER_SALA) from {a1, a2}`,
-    nota: 'Caso hard validado. El operador K_agente() se genera cuando el formalizador detecta "sabe que" seguido de un nombre de agente en el contexto epistemico S5.',
+    nota: 'Caso hard validado. El operador K_agente() se genera cuando el formalizador detecta "sabe que" seguido de un nombre de agente en el contexto epistémico S5.',
   },
   {
     id: 'kant',
     playgroundId: 'kant',
-    title: 'Argumento kantiano — intuicion pura y geometria',
-    description: 'Formalizacion de la Critica de la Razon Pura: cadena hipotetica sobre intuicion pura → geometria euclidiana posible.',
+    title: 'Argumento kantiano — intuición pura y geometría',
+    description: 'Formalización de la Crítica de la Razón Pura: cadena hipotética sobre intuición pura → geometría euclidiana posible.',
     profile: 'classical.propositional',
     patterns: ['hypothetical_syllogism', 'modus_ponens'],
     texto:
@@ -366,13 +366,13 @@ axiom kant3 : INTUICION_PURA
 
 derive GEOMETRIA_POSIBLE from {kant1, kant2, kant3}
 check valid (((INTUICION_PURA -> JUICIO_SINTETICO) & (JUICIO_SINTETICO -> GEOMETRIA_POSIBLE) & INTUICION_PURA) -> GEOMETRIA_POSIBLE)`,
-    nota: 'Ejemplo filosofico de la Text Layer de ST. La cadena hipotetica es una tautologia proposicional: ((A→B)&(B→C)&A)→C. El check valid lo confirma.',
+    nota: 'Ejemplo filosófico de la Text Layer de ST. La cadena hipotética es una tautología proposicional: ((A→B)&(B→C)&A)→C. El check valid lo confirma.',
   },
   {
     id: 'temporal-falla',
     playgroundId: 'temporal',
     title: 'Falla y alerta — LTL',
-    description: 'Logica temporal lineal: propiedad de safety/liveness sobre sistemas de monitoreo de fallas.',
+    description: 'Lógica temporal lineal: propiedad de safety/liveness sobre sistemas de monitoreo de fallas.',
     profile: 'temporal.ltl',
     patterns: ['modus_ponens'],
     texto:
@@ -383,13 +383,13 @@ axiom regla : G(FALLA_DETECTADA -> F(ALERTA_EMITIDA))
 axiom hecho : FALLA_DETECTADA
 
 prove F(ALERTA_EMITIDA)`,
-    nota: 'Operadores LTL: G (globally / siempre), F (finally / eventualmente). El formalizador detecta "siempre que" → G(...→...) y "eventualmente" → F(...).',
+    nota: 'Operadores LTL: G (globally / siempre), F (finally / eventualmente). El formalizador detecta "siempre que" → G(…→…) y "eventualmente" → F(…).',
   },
   {
     id: 'modal-leyes',
     playgroundId: 'modal',
     title: 'Necesidad de las leyes — Modal K',
-    description: 'Logica modal basica (sistema K): necesidad de las leyes implica posibilidad de sancion.',
+    description: 'Lógica modal básica (sistema K): necesidad de las leyes implica posibilidad de sanción.',
     profile: 'modal.k',
     patterns: ['modus_ponens'],
     texto:
@@ -406,7 +406,7 @@ prove ◇(SANCIONAR)`,
     id: 'silogismo-barbara',
     playgroundId: 'silogismo-aristotelico',
     title: 'Silogismo Barbara — todo humano es mortal',
-    description: 'El silogismo clasico mas conocido: ∀x(H(x)→M(x)), H(s) ⊢ M(s). Aristotelian.syllogistic.',
+    description: 'El silogismo clásico más conocido: ∀x(H(x)→M(x)), H(s) ⊢ M(s). Aristotelian.syllogistic.',
     profile: 'aristotelian.syllogistic',
     patterns: ['universal_instantiation'],
     texto:
@@ -417,6 +417,6 @@ axiom mayor : forall x (humano(x) -> mortal(x))
 axiom menor : humano(socrates)
 
 derive mortal(socrates) from {mayor, menor}`,
-    nota: 'Forma Barbara (AAA-1). "Todo" → forall, "es" (copula) → predicado. El perfil aristotelian.syllogistic reconoce las cuatro formas categoricas: A (todo), E (ningun), I (algun), O (algun... no).',
+    nota: 'Forma Barbara (AAA-1). "Todo" → forall, "es" (cópula) → predicado. El perfil aristotelian.syllogistic reconoce las cuatro formas categóricas: A (todo), E (ningún), I (algún), O (algún... no).',
   },
 ];

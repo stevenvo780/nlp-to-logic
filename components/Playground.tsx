@@ -78,7 +78,7 @@ function PlaygroundInner() {
     <div className="flex flex-col gap-4">
       {/* Controles */}
       <div className="flex flex-wrap items-center gap-3">
-        <label htmlFor="profile-select" className="text-sm text-muted">Perfil logico</label>
+        <label htmlFor="profile-select" className="text-sm text-muted">Perfil lógico</label>
         <select
           id="profile-select"
           value={profile}
@@ -99,8 +99,8 @@ function PlaygroundInner() {
           onChange={(e) => setLanguage(e.target.value as Language)}
           className="rounded-md border border-border bg-panel-2 px-3 py-2 text-sm text-foreground outline-none focus:border-accent"
         >
-          <option value="es">Espanol</option>
-          <option value="en">Ingles</option>
+          <option value="es">Español</option>
+          <option value="en">Inglés</option>
         </select>
 
         <button
@@ -140,9 +140,9 @@ function PlaygroundInner() {
           />
         </Panel>
 
-        <Panel title="2 · Formula logica (ST)" subtitle="generada por autologic" accent="accent">
+        <Panel title="2 · Fórmula lógica (ST)" subtitle="generada por autologic" accent="accent">
           <CodeBlock
-            text={result?.stCode ?? '// El codigo ST aparecera aqui tras formalizar.'}
+            text={result?.stCode ?? '// El código ST aparecerá aquí tras formalizar.'}
             empty={!result}
           />
           {result && result.detectedPatterns.length > 0 && (
@@ -159,7 +159,7 @@ function PlaygroundInner() {
           )}
         </Panel>
 
-        <Panel title="3 · Resultado de ejecucion" subtitle="evaluado por st-lang" accent="ok">
+        <Panel title="3 · Resultado de ejecución" subtitle="evaluado por st-lang" accent="ok">
           <ResultPanel result={result} error={error} loading={loading} />
         </Panel>
       </div>
@@ -232,7 +232,7 @@ function ResultPanel({
   if (!result) {
     return (
       <div className="flex h-72 items-center justify-center rounded-md border border-border bg-panel-2 text-sm text-muted">
-        El resultado logico aparecera aqui.
+        El resultado lógico aparecerá aquí.
       </div>
     );
   }
@@ -270,7 +270,7 @@ function ResultPanel({
       {result.execution.stdout && (
         <details className="text-xs">
           <summary className="cursor-pointer text-muted hover:text-foreground">
-            Salida del interprete ST
+            Salida del intérprete ST
           </summary>
           <pre className="thin-scroll mt-2 overflow-auto rounded bg-background p-2 font-mono text-foreground">
             {result.execution.stdout}
@@ -282,7 +282,7 @@ function ResultPanel({
       {result.atoms.length > 0 && (
         <details className="text-xs">
           <summary className="cursor-pointer text-muted hover:text-foreground">
-            Atomos extraidos ({result.atoms.length})
+            Átomos extraídos ({result.atoms.length})
           </summary>
           <ul className="mt-2 space-y-1">
             {result.atoms.map((a) => (
@@ -298,7 +298,7 @@ function ResultPanel({
       {result.diagnostics.length > 0 && (
         <details className="text-xs">
           <summary className="cursor-pointer text-muted hover:text-foreground">
-            Diagnosticos ({result.diagnostics.length})
+            Diagnósticos ({result.diagnostics.length})
           </summary>
           <ul className="mt-2 space-y-1">
             {result.diagnostics.map((d, i) => (

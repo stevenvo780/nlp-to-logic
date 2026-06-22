@@ -62,7 +62,7 @@ export default function Home() {
             nlp → logic
           </span>
           <span className="font-mono text-xs text-muted">
-            ST · 6333 tests · SAT CDCL · 11 perfiles logicos
+            ST · 6333 tests · SAT CDCL · 11 perfiles lógicos
           </span>
           <div className="ml-auto flex items-center gap-4">
             <Link
@@ -75,7 +75,7 @@ export default function Home() {
               href="/docs"
               className="text-muted transition hover:text-foreground"
             >
-              Documentacion ST
+              Documentación ST
             </Link>
             <a
               href="https://github.com/stevenvo780/ST"
@@ -95,7 +95,7 @@ export default function Home() {
           Playground interactivo: escribe en español, obtén la fórmula lógica y ejecútala en vivo — sin IA, sin base de datos.
         </p>
         <p className="mt-3 max-w-3xl text-base leading-relaxed text-muted">
-          Escribe un argumento en espanol.{' '}
+          Escribe un argumento en español.{' '}
           <a
             href="https://github.com/stevenvo780/auto.logic"
             target="_blank"
@@ -104,7 +104,7 @@ export default function Home() {
           >
             autologic
           </a>{' '}
-          lo formaliza a codigo logico{' '}
+          lo formaliza a código lógico{' '}
           <strong className="text-foreground">sin usar IA</strong> (NLP basado en reglas),
           y{' '}
           <a
@@ -115,7 +115,7 @@ export default function Home() {
           >
             ST
           </a>{' '}
-          lo ejecuta con su motor logico (SAT solver CDCL propio, derivaciones, validez,
+          lo ejecuta con su motor lógico (SAT solver CDCL propio, derivaciones, validez,
           contramodelos). Todo el pipeline corre en vivo, en proceso, sin base de datos ni
           modelos de lenguaje.
         </p>
@@ -125,7 +125,7 @@ export default function Home() {
 
       {/* Tarjetas explicativas */}
       <section className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
-        <InfoCard title="Que es interactivo">
+        <InfoCard title="Qué es interactivo">
           <p>
             <strong className="text-foreground">Todo el pipeline es en vivo.</strong> El texto
             que escribes se formaliza y se ejecuta en una funcion serverless de Vercel (runtime
@@ -133,12 +133,12 @@ export default function Home() {
             cada peticion recorre el pipeline completo (~10 ms).
           </p>
         </InfoCard>
-        <InfoCard title="Como funciona por dentro">
+        <InfoCard title="Cómo funciona por dentro">
           <p>
             1.{' '}
             <code className="text-accent">autologic.formalize()</code> segmenta el texto,
             detecta ~200 marcadores discursivos y patrones de inferencia (modus ponens,
-            silogismo hipotetico, cuantificadores...), y emite codigo ST.
+            silogismo hipotético, cuantificadores...), y emite código ST.
           </p>
           <p className="mt-2">
             2. <code className="text-accent">st-lang.evaluate()</code> parsea y ejecuta ese
@@ -148,12 +148,12 @@ export default function Home() {
             <code className="text-err">refutable</code>...).
           </p>
         </InfoCard>
-        <InfoCard title="Limites honestos">
+        <InfoCard title="Límites honestos">
           <p>
             El formalizador es{' '}
             <strong className="text-foreground">basado en reglas</strong>, no un LLM: brilla
             con argumentos estructurados (condicionales, silogismos, operadores
-            modales/deonticos) y puede devolver{' '}
+            modales/deónticos) y puede devolver{' '}
             <code className="text-warn">indeterminado</code> con prosa libre o
             correferencias ambiguas. Eso es por diseno: cero alucinacion, trazabilidad total.
           </p>
@@ -170,22 +170,22 @@ export default function Home() {
           docsHref="/docs"
         >
           <p>
-            Lenguaje ejecutable de logica formal con 11 perfiles (proposicional, modal,
-            deontico, epistemico, intuicionista, temporal LTL, paraconsistente Belnap,
-            aristotelico, probabilistico, aritmetica y primer orden). El SAT solver CDCL es
+            Lenguaje ejecutable de lógica formal con 11 perfiles (proposicional, modal,
+            deóntico, epistémico, intuicionista, temporal LTL, paraconsistente Belnap,
+            aristotélico, probabilístico, aritmética y primer orden). El SAT solver CDCL es
             TypeScript puro con VSIDS, clause learning y reinicios Luby. Z3 se carga
             perezosamente solo si se necesita.
           </p>
           <ul className="mt-3 space-y-1 text-xs text-muted">
             <li>Derivaciones, tablas de verdad, contramodelos, MUS</li>
             <li>Curry-Howard, System F, tipos dependientes (MLTT)</li>
-            <li>Text Layer: vincular pasajes de documentos con formulas</li>
-            <li>CLI, REPL, API programatica (este playground la usa)</li>
+            <li>Text Layer: vincular pasajes de documentos con fórmulas</li>
+            <li>CLI, REPL, API programática (este playground la usa)</li>
           </ul>
         </TechCard>
 
         <TechCard
-          title="auto.logic — NLP → logica sin IA"
+          title="auto.logic — NLP → lógica sin IA"
           badge="bilingüe ES/EN · zero runtime deps"
           badgeColor="accent-2"
           href="https://github.com/stevenvo780/auto.logic"
@@ -194,15 +194,15 @@ export default function Home() {
         >
           <p>
             Formalizador NLP basado en reglas: stemmers Snowball, ~200 marcadores discursivos
-            en espanol e ingles, deteccion de patrones de inferencia. Convierte oraciones a
-            codigo ST sin modelos de lenguaje, sin APIs externas, con trazabilidad total de
+            en español e inglés, detección de patrones de inferencia. Convierte oraciones a
+            código ST sin modelos de lenguaje, sin APIs externas, con trazabilidad total de
             cada atom → texto fuente.
           </p>
           <ul className="mt-3 space-y-1 text-xs text-muted">
             <li>Patrones: modus_ponens, modus_tollens, hypothetical_syllogism</li>
             <li>Cuantificadores: universal_generalization, universal_instantiation</li>
-            <li>Operadores modales/deonticos/epistemicos detectados por marcadores</li>
-            <li>11 casos dificiles validados manualmente (juridicos, filosoficos, matematicos)</li>
+            <li>Operadores modales/deónticos/epistémicos detectados por marcadores</li>
+            <li>11 casos difíciles validados manualmente (jurídicos, filosóficos, matemáticos)</li>
           </ul>
         </TechCard>
       </section>
@@ -213,7 +213,7 @@ export default function Home() {
             Casos validados
           </Link>
           <Link href="/docs" className="hover:text-foreground">
-            Documentacion ST
+            Documentación ST
           </Link>
           <a
             className="hover:text-foreground"
@@ -251,7 +251,7 @@ export default function Home() {
               rel="noreferrer"
               className="hover:text-foreground transition-colors"
             >
-              Filosofia
+              Filosofía
             </a>
             <a
               href="https://www.stevenvallejo.com/es#ciencias"
@@ -267,7 +267,7 @@ export default function Home() {
               rel="noreferrer"
               className="hover:text-foreground transition-colors"
             >
-              Informatica
+              Informática
             </a>
             <a
               href="https://www.stevenvallejo.com/es#ingenieria"
@@ -275,7 +275,7 @@ export default function Home() {
               rel="noreferrer"
               className="hover:text-foreground transition-colors"
             >
-              Ingenieria
+              Ingeniería
             </a>
           </div>
         </div>

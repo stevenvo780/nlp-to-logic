@@ -53,10 +53,10 @@ export default function DocsPage() {
           ST — Symbolic Theory Language
         </h1>
         <p className="mt-3 max-w-3xl text-base leading-relaxed text-muted">
-          ST es un lenguaje ejecutable para logica formal, argumentacion y formalización
-          documental. Combina un motor logico multi-perfil (11 sistemas logicos), un SAT solver
-          CDCL propio, scripting imperativo y una Text Layer para conectar formulas con texto
-          humano. Este playground lo expone via API en proceso, sin base de datos ni GPU.
+          ST es un lenguaje ejecutable para lógica formal, argumentación y formalización
+          documental. Combina un motor lógico multi-perfil (11 sistemas lógicos), un SAT solver
+          CDCL propio, scripting imperativo y una Text Layer para conectar fórmulas con texto
+          humano. Este playground lo expone vía API en proceso, sin base de datos ni GPU.
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           <a
@@ -78,10 +78,10 @@ export default function DocsPage() {
 
       <div className="space-y-10">
         {/* Estructura minima */}
-        <Section title="1. Estructura minima de un script ST">
+        <Section title="1. Estructura mínima de un script ST">
           <p className="mb-4 text-muted">
-            Todo script ST comienza con una declaracion <Code>logic</Code> que selecciona el
-            perfil logico activo. Luego se mezclan declaraciones (axiomas, teoremas, variables)
+            Todo script ST comienza con una declaración <Code>logic</Code> que selecciona el
+            perfil lógico activo. Luego se mezclan declaraciones (axiomas, teoremas, variables)
             con comandos ejecutables (derive, check, prove).
           </p>
           <CodeBlock>{`logic classical.propositional
@@ -99,10 +99,10 @@ check valid (P | !P)`}</CodeBlock>
         </Section>
 
         {/* Perfiles logicos */}
-        <Section title="2. Perfiles logicos (11 sistemas)">
+        <Section title="2. Perfiles lógicos (11 sistemas)">
           <p className="mb-4 text-muted">
-            El perfil determina la semantica, los operadores disponibles y el motor de
-            decision. Un mismo argumento puede producir resultados distintos segun el perfil.
+            El perfil determina la semántica, los operadores disponibles y el motor de
+            decisión. Un mismo argumento puede producir resultados distintos según el perfil.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
@@ -110,7 +110,7 @@ check valid (P | !P)`}</CodeBlock>
                 <tr className="border-b border-border text-left">
                   <th className="py-2 pr-4 text-foreground">Perfil</th>
                   <th className="py-2 pr-4 text-foreground">Operadores clave</th>
-                  <th className="py-2 text-foreground">Uso tipico</th>
+                  <th className="py-2 text-foreground">Uso típico</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border text-muted">
@@ -131,48 +131,48 @@ check valid (P | !P)`}</CodeBlock>
           <div className="space-y-6">
             <CmdDoc
               cmd="derive <meta> from {<premisas>}"
-              desc="Deriva una formula a partir de un conjunto explícito de premisas por nombre. Usa el motor de derivacion del perfil activo (resolucion, natural deduction, etc.)."
+              desc="Deriva una fórmula a partir de un conjunto explícito de premisas por nombre. Usa el motor de derivación del perfil activo (resolución, natural deduction, etc.)."
               example={`axiom a1 : P -> Q
 axiom a2 : P
 derive Q from {a1, a2}   // status: provable`}
             />
             <CmdDoc
               cmd="prove <formula>"
-              desc="Prueba una formula desde la teoria acumulada (todos los axiomas declarados), sin lista explícita de premisas."
+              desc="Prueba una fórmula desde la teoría acumulada (todos los axiomas declarados), sin lista explícita de premisas."
               example={`axiom a1 : P -> Q
 axiom a2 : P
 prove Q   // status: provable`}
             />
             <CmdDoc
               cmd="check valid <formula>"
-              desc="Verifica si la formula es valida (tautologia) en el perfil activo. El SAT solver CDCL confirma que no hay modelo que la falsifique."
+              desc="Verifica si la fórmula es válida (tautología) en el perfil activo. El SAT solver CDCL confirma que no hay modelo que la falsifique."
               example={`check valid (P | !P)        // valido (tautologia)
 check valid (P -> Q)        // invalido (hay contramodelo)`}
             />
             <CmdDoc
               cmd="check satisfiable <formula>"
-              desc="Verifica si existe al menos un modelo que satisfaga la formula."
+              desc="Verifica si existe al menos un modelo que satisfaga la fórmula."
               example={`check satisfiable (P & Q)   // satisfacible
 check satisfiable (P & !P)  // insatisfacible`}
             />
             <CmdDoc
               cmd="check equivalent <f1>, <f2>"
-              desc="Compara equivalencia logica entre dos formulas (ambas tienen los mismos modelos)."
+              desc="Compara equivalencia lógica entre dos fórmulas (ambas tienen los mismos modelos)."
               example={`check equivalent !(P & Q), (!P | !Q)   // De Morgan: equivalente`}
             />
             <CmdDoc
               cmd="countermodel <formula>"
-              desc="Busca un modelo (asignacion de valores de verdad) que falsifique la formula. Util para encontrar contra-ejemplos."
+              desc="Busca un modelo (asignación de valores de verdad) que falsifique la fórmula. Útil para encontrar contra-ejemplos."
               example={`countermodel (P -> Q)   // modelo: P=true, Q=false`}
             />
           </div>
         </Section>
 
         {/* Scripting */}
-        <Section title="4. Scripting: variables, funciones y teorias">
+        <Section title="4. Scripting: variables, funciones y teorías">
           <p className="mb-4 text-muted">
-            ST incluye un lenguaje de scripting completo que permite nombrar formulas, encapsular
-            logica en funciones y agrupar conocimiento en teorias reutilizables.
+            ST incluye un lenguaje de scripting completo que permite nombrar fórmulas, encapsular
+            lógica en funciones y agrupar conocimiento en teorías reutilizables.
           </p>
           <CodeBlock>{`logic classical.propositional
 
@@ -200,7 +200,7 @@ print CursoLogica.base`}</CodeBlock>
         </Section>
 
         {/* Perfiles no clasicos */}
-        <Section title="5. Logicas no clasicas — ejemplos">
+        <Section title="5. Lógicas no clásicas — ejemplos">
           <div className="space-y-6">
             <SubSection title="Modal K — necesidad y posibilidad">
               <CodeBlock>{`logic modal.k
@@ -210,7 +210,7 @@ axiom regla : □(L) -> ◇(S)         // Si es necesario L, es posible sanciona
 
 prove ◇(S)                           // posible sancionar`}</CodeBlock>
             </SubSection>
-            <SubSection title="Deontica — obligacion y prohibicion">
+            <SubSection title="Deóntica — obligación y prohibición">
               <CodeBlock>{`logic deontic.standard
 
 axiom pagar   : O(P)               // Es obligatorio pagar impuestos
@@ -218,7 +218,7 @@ axiom regla   : O(P) -> F(E)       // Si obligatorio pagar, prohibido evadir
                                    // F(x) = forbidden (prohibicion)
 prove F(E)                          // prohibido evadir`}</CodeBlock>
             </SubSection>
-            <SubSection title="Epistemica S5 — conocimiento">
+            <SubSection title="Epistémica S5 — conocimiento">
               <CodeBlock>{`logic epistemic.s5
 
 // K_a(P) = el agente 'a' sabe que P
@@ -227,7 +227,7 @@ axiom regla        : K_juan(BANCO_CERRADO) -> !IRA_BANCO
 
 prove !IRA_BANCO    // Juan no ira al banco`}</CodeBlock>
             </SubSection>
-            <SubSection title="Aristotelica — silogismos">
+            <SubSection title="Aristotélica — silogismos">
               <CodeBlock>{`logic aristotelian.syllogistic
 
 // forall / exists como en primer orden
@@ -242,8 +242,8 @@ prove mortal(socrates)   // Modus Barbara`}</CodeBlock>
         {/* Text Layer */}
         <Section title="6. Text Layer — formalizar documentos">
           <p className="mb-4 text-muted">
-            La Text Layer de ST permite vincular pasajes de documentos con formulas formales y
-            claims verificables. Es la caracteristica mas avanzada del lenguaje: convierte un
+            La Text Layer de ST permite vincular pasajes de documentos con fórmulas formales y
+            claims verificables. Es la característica más avanzada del lenguaje: convierte un
             documento de texto en una base de conocimiento verificable.
           </p>
           <CodeBlock>{`logic classical.propositional
@@ -272,11 +272,11 @@ derive G from {kant1, kant2, intuicion}   // La geometria euclidiana es posible`
         </Section>
 
         {/* SAT CDCL */}
-        <Section title="7. Motor SAT CDCL — tecnologia interna">
+        <Section title="7. Motor SAT CDCL — tecnología interna">
           <p className="mb-4 text-muted">
-            El nucleo de ST es un SAT solver CDCL (Conflict-Driven Clause Learning) escrito
+            El núcleo de ST es un SAT solver CDCL (Conflict-Driven Clause Learning) escrito
             enteramente en TypeScript. No delega a Z3 ni a binarios externos para el caso base;
-            Z3 se carga de forma perezosa solo si una formula lo requiere explicitamente.
+            Z3 se carga de forma perezosa solo si una fórmula lo requiere explícitamente.
           </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {SAT_FEATURES.map((f) => (
@@ -289,9 +289,9 @@ derive G from {kant1, kant2, intuicion}   // La geometria euclidiana es posible`
         </Section>
 
         {/* API */}
-        <Section title="8. API programatica (TypeScript)">
+        <Section title="8. API programática (TypeScript)">
           <p className="mb-4 text-muted">
-            Este playground usa directamente la API programatica de ST desde una funcion
+            Este playground usa directamente la API programática de ST desde una función
             serverless de Vercel (runtime Node). No hay procesos hijos ni subshells.
           </p>
           <CodeBlock>{`import { evaluate, type STEvalResult } from '@stevenvo780/st-lang/api';
@@ -397,17 +397,17 @@ function CmdDoc({
 // ── Datos ─────────────────────────────────────────────────────────────────────
 
 const PROFILES_TABLE = [
-  { id: 'classical.propositional', ops: '→  &  |  !  ↔  ^', use: 'Logica clasica, argumentacion basica' },
+  { id: 'classical.propositional', ops: '→  &  |  !  ↔  ^', use: 'Lógica clásica, argumentación básica' },
   { id: 'classical.first_order', ops: '∀  ∃  predicados', use: 'Razonamiento sobre individuos y propiedades' },
-  { id: 'modal.k', ops: '□ (necesario)  ◇ (posible)', use: 'Mundos posibles, necesidad metafisica' },
-  { id: 'deontic.standard', ops: 'O (obligacion)  P (permision)  F (prohibicion)', use: 'Etica, normas juridicas, compliance' },
-  { id: 'epistemic.s5', ops: 'K_a (sabe a)  B_a (cree a)', use: 'Conocimiento, informacion multi-agente' },
-  { id: 'intuitionistic.propositional', ops: 'sin tercero excluido, sin doble negacion', use: 'Matematicas constructivas, tipos dependientes' },
-  { id: 'temporal.ltl', ops: 'X (next)  U (until)  G (always)  F (eventually)', use: 'Verificacion de sistemas, protocolos' },
-  { id: 'paraconsistent.belnap', ops: '4 valores: T / F / B / N', use: 'Contradicciones sin explosion, bases de datos inconsistentes' },
-  { id: 'aristotelian.syllogistic', ops: 'todo / algun / ningun + predicados', use: 'Silogismos, razonamiento juridico clasico' },
-  { id: 'probabilistic.basic', ops: 'P(·) ∈ [0,1]  redes Bayesianas', use: 'Inferencia probabilistica, incertidumbre' },
-  { id: 'arithmetic', ops: '+  *  =  <  ≤  mod', use: 'Propiedades aritmeticas, divisibilidad' },
+  { id: 'modal.k', ops: '□ (necesario)  ◇ (posible)', use: 'Mundos posibles, necesidad metafísica' },
+  { id: 'deontic.standard', ops: 'O (obligación)  P (permisión)  F (prohibición)', use: 'Ética, normas jurídicas, compliance' },
+  { id: 'epistemic.s5', ops: 'K_a (sabe a)  B_a (cree a)', use: 'Conocimiento, información multi-agente' },
+  { id: 'intuitionistic.propositional', ops: 'sin tercero excluido, sin doble negación', use: 'Matemáticas constructivas, tipos dependientes' },
+  { id: 'temporal.ltl', ops: 'X (next)  U (until)  G (always)  F (eventually)', use: 'Verificación de sistemas, protocolos' },
+  { id: 'paraconsistent.belnap', ops: '4 valores: T / F / B / N', use: 'Contradicciones sin explosión, bases de datos inconsistentes' },
+  { id: 'aristotelian.syllogistic', ops: 'todo / algún / ningún + predicados', use: 'Silogismos, razonamiento jurídico clásico' },
+  { id: 'probabilistic.basic', ops: 'P(·) ∈ [0,1]  redes Bayesianas', use: 'Inferencia probabilística, incertidumbre' },
+  { id: 'arithmetic', ops: '+  *  =  <  ≤  mod', use: 'Propiedades aritméticas, divisibilidad' },
 ];
 
 const SAT_FEATURES = [
@@ -417,22 +417,22 @@ const SAT_FEATURES = [
   },
   {
     title: 'SAT incremental',
-    desc: 'Reutiliza el estado del solver entre consultas dentro del mismo script. Cache de derivaciones con memoizacion y theorem-cache persistente por sesion.',
+    desc: 'Reutiliza el estado del solver entre consultas dentro del mismo script. Caché de derivaciones con memoización y theorem-cache persistente por sesión.',
   },
   {
     title: 'MUS — Minimal Unsatisfiable Subsets',
-    desc: 'Diagnostica inconsistencias identificando el subconjunto minimo de clausulas que causan el conflicto. Util para depurar teorias.',
+    desc: 'Diagnostica inconsistencias identificando el subconjunto mínimo de cláusulas que causan el conflicto. Útil para depurar teorías.',
   },
   {
     title: 'Curry-Howard (type theory)',
     desc: 'Pruebas como programas: System F con polimorfismo parametrico, MLTT (Martin-Löf Type Theory), tipos dependientes y NbE (Normalizacion por Evaluacion).',
   },
   {
-    title: 'Logica lineal y π-calculo',
-    desc: 'Sublogicas estructurales (no-contraction, no-weakening), proof nets canonicos y razonamiento sobre procesos concurrentes.',
+    title: 'Lógica lineal y π-cálculo',
+    desc: 'Sublógicas estructurales (no-contraction, no-weakening), proof nets canónicos y razonamiento sobre procesos concurrentes.',
   },
   {
     title: 'Z3 como co-motor opcional',
-    desc: 'Para formulas fuera del alcance del CDCL nativo (QBF, aritmetica no lineal), ST carga z3-solver de forma perezosa via import() dinamico. El playground NO activa este camino.',
+    desc: 'Para fórmulas fuera del alcance del CDCL nativo (QBF, aritmética no lineal), ST carga z3-solver de forma perezosa vía import() dinámico. El playground NO activa este camino.',
   },
 ];

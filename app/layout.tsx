@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -21,11 +21,15 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+export const viewport: Viewport = {
+  themeColor: "#0b1417",
+};
+
 export const metadata: Metadata = {
   metadataBase: new URL(CANONICAL_BASE),
   title: "Órganon — lenguaje natural a lógica formal · Mouseîon",
   description:
-    "Órganon convierte texto en español a lógica formal ejecutable sin IA: autologic formaliza el argumento y ST (SAT solver CDCL) lo evalúa en vivo. Parte del ecosistema Mouseîon de Steven Vallejo.",
+    "Órganon convierte texto en español a lógica formal ejecutable sin IA: autologic formaliza argumentos y ST (SAT solver CDCL) los evalúa en vivo. Parte del ecosistema Mouseîon.",
   alternates: {
     canonical: "/",
   },
@@ -53,16 +57,6 @@ export const metadata: Metadata = {
       "Convierte texto en español a lógica formal ejecutable sin IA. autologic + ST (SAT solver CDCL propio). Parte del ecosistema Mouseîon de Steven Vallejo.",
     images: ["/og-image.png"],
   },
-  icons: {
-    icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico", sizes: "any" },
-    ],
-    apple: "/apple-touch-icon.png",
-  },
-  other: {
-    "theme-color": "#0b1417",
-  },
 };
 
 export default function RootLayout({
@@ -80,8 +74,11 @@ export default function RootLayout({
         name: "Órganon",
         description:
           "Playground interactivo que convierte lenguaje natural a lógica formal ejecutable sin IA.",
-        inLanguage: "es",
-        publisher: { "@id": CANONICAL_BASE + "/#person" },
+        publisher: {
+          "@type": "Organization",
+          name: "Mouseîon",
+          url: "https://stevenvallejo.com/",
+        },
       },
       {
         "@type": "SoftwareApplication",
@@ -89,11 +86,11 @@ export default function RootLayout({
         name: "Órganon",
         alternateName: "nlp-to-logic",
         url: CANONICAL_BASE + "/",
+        inLanguage: "es",
         description:
           "Convierte texto en español a lógica formal ejecutable sin IA. autologic formaliza el argumento (NLP basado en reglas) y ST lo evalúa con un SAT solver CDCL propio.",
         applicationCategory: "DeveloperApplication",
         operatingSystem: "Web",
-        inLanguage: "es",
         isPartOf: {
           "@type": "WebSite",
           name: "Mouseîon",
@@ -104,6 +101,7 @@ export default function RootLayout({
           "@type": "Offer",
           price: "0",
           priceCurrency: "USD",
+          availability: "https://schema.org/OnlineOnly",
         },
       },
       {
@@ -125,8 +123,6 @@ export default function RootLayout({
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#0b1417" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
