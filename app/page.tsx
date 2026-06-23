@@ -25,10 +25,10 @@ export default function Home() {
             aria-label="Órganon — parte de Mouseîon"
           >
             <Image
-              src="/navbar-logo.png"
+              src="/icon-256.png"
               alt="Órganon isotipo"
-              width={26}
-              height={26}
+              width={40}
+              height={40}
               style={{ objectFit: 'contain' }}
             />
             <span
