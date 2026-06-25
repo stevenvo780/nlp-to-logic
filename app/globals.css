@@ -35,8 +35,8 @@
   --muted: var(--text-muted);
   /* accent en el codigo = primary teal (#43b5a6 Cloud Atlas) */
   --accent-ui: var(--primary);
-  /* accent-2 en el codigo = dorado (#e0a85e Cloud Atlas) */
-  --accent-2-ui: var(--accent);
+  /* accent-2 en el codigo = teal profundo (#2a7a70, acento de frente Informática) */
+  --accent-2-ui: #2a7a70;
   --ok: var(--success);
   --warn: var(--warning);
   --err: var(--danger);
@@ -51,13 +51,14 @@
   --color-muted: var(--muted);
   /* accent = teal primario */
   --color-accent: var(--accent-ui);
-  /* accent-2 = dorado */
+  /* accent-2 = teal profundo (acento de frente Informática) */
   --color-accent-2: var(--accent-2-ui);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-err: var(--err);
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains-mono);
+  --font-serif: var(--font-cormorant);
 }
 
 html,
@@ -65,6 +66,16 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* Cormorant Garamond para encabezados */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-serif), serif;
 }
 
 a {
