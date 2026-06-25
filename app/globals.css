@@ -12,8 +12,8 @@
   --primary: #43b5a6;
   --primary-strong: #2a7a70;
   --on-primary: #071a17;
-  --accent: #e0a85e;
-  --accent-strong: #c89445;
+  --accent: #8d7cc0;
+  --accent-strong: #5a3a9a;
   --accent-3: #A3E4D7;
   --on-accent: #1a1206;
   --link: #43b5a6;
@@ -22,7 +22,7 @@
   --warning: #FBBF24;
   --danger: #F87171;
   /* gradiente-firma Órganon */
-  --gradient-brand: linear-gradient(135deg, #43b5a6 0%, #e0a85e 55%, #c89445 100%);
+  --gradient-brand: linear-gradient(135deg, #43b5a6 0%, #8d7cc0 55%, #5a3a9a 100%);
 }
 
 /* Aliases de compatibilidad para las clases Tailwind existentes */
