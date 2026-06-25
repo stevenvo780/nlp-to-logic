@@ -5,7 +5,8 @@ import "./globals.css";
 // Workaround: Next.js 15 con app router puro intenta pre-renderizar /404
 // usando un shell legacy que llama useHtmlContext() sin provider. Marcar
 // como dynamic-ish evita el flujo defectuoso.
-export const dynamic = 'auto'; // default, pero explicito
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 const CANONICAL_BASE = "https://organon.stevenvallejo.com";
 
