@@ -35,9 +35,11 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL(CANONICAL_BASE),
-  title: "Órganon — lenguaje natural a lógica formal · Mouseîon",
+  title: "Órganon — lenguaje natural a lógica formal · Steven Vallejo · Mouseîon",
   description:
-    "Órganon convierte texto en español a lógica formal ejecutable sin IA: autologic formaliza argumentos y ST (SAT solver CDCL) los evalúa en vivo. Parte del ecosistema Mouseîon.",
+    "Órganon: convierte texto en español a lógica formal ejecutable sin IA. Herramienta de Steven Vallejo. autologic + ST (SAT solver CDCL). Ecosistema Mouseîon.",
+  keywords: ["Órganon", "lógica formal", "NLP", "Steven Vallejo", "Mouseîon", "autologic", "ST", "SAT solver"],
+  authors: [{ name: "Steven Vallejo", url: "https://www.stevenvallejo.com" }],
   alternates: {
     canonical: "/",
   },
@@ -59,25 +61,26 @@ export const metadata: Metadata = {
     type: "website",
     url: CANONICAL_BASE + "/",
     siteName: "Mouseîon",
-    title: "Órganon — lenguaje natural a lógica formal · Mouseîon",
+    title: "Órganon — lógica formal en español · Steven Vallejo",
     description:
-      "Convierte texto en español a lógica formal ejecutable sin IA. autologic + ST (SAT solver CDCL propio). Parte del ecosistema Mouseîon de Steven Vallejo.",
+      "Herramienta de Steven Vallejo: transforma lenguaje natural a lógica formal ejecutable sin IA. autologic (NLP reglas) + ST (SAT solver CDCL). Mouseîon.",
     locale: "es_ES",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "Órganon — NLP a lógica formal · Mouseîon",
+        alt: "Órganon — NLP a lógica formal de Steven Vallejo",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Órganon — lenguaje natural a lógica formal · Mouseîon",
+    title: "Órganon — lógica formal en español · Steven Vallejo",
     description:
-      "Convierte texto en español a lógica formal ejecutable sin IA. autologic + ST (SAT solver CDCL propio). Parte del ecosistema Mouseîon de Steven Vallejo.",
+      "Herramienta de Steven Vallejo: text→lógica sin IA. autologic + ST (SAT CDCL). Mouseîon.",
     images: ["/og-image.png"],
+    creator: "@stevenvo780",
   },
 };
 
@@ -94,47 +97,59 @@ export default function RootLayout({
         "@id": CANONICAL_BASE + "/#website",
         url: CANONICAL_BASE + "/",
         name: "Órganon",
-        description:
-          "Playground interactivo que convierte lenguaje natural a lógica formal ejecutable sin IA.",
+        description: "Playground interactivo: lenguaje natural a lógica formal sin IA",
         publisher: {
           "@type": "Organization",
           name: "Mouseîon",
-          url: "https://stevenvallejo.com/",
+          url: "https://www.stevenvallejo.com",
+          logo: {
+            "@type": "ImageObject",
+            url: "https://www.stevenvallejo.com/logo.png",
+          },
         },
       },
       {
         "@type": "SoftwareApplication",
         "@id": CANONICAL_BASE + "/#app",
         name: "Órganon",
-        alternateName: "nlp-to-logic",
+        alternateName: ["nlp-to-logic", "NLP a lógica"],
         url: CANONICAL_BASE + "/",
         inLanguage: "es",
         description:
-          "Convierte texto en español a lógica formal ejecutable sin IA. autologic formaliza el argumento (NLP basado en reglas) y ST lo evalúa con un SAT solver CDCL propio.",
+          "Convertidor de lenguaje natural a lógica formal ejecutable sin inteligencia artificial. Usa autologic (NLP basado en reglas) y ST (SAT solver CDCL propio).",
         applicationCategory: "DeveloperApplication",
         operatingSystem: "Web",
-        isPartOf: {
-          "@type": "WebSite",
-          name: "Mouseîon",
-          url: "https://stevenvallejo.com/",
-        },
+        isPartOf: { "@id": CANONICAL_BASE + "/#website" },
         author: { "@id": CANONICAL_BASE + "/#person" },
+        creator: { "@id": CANONICAL_BASE + "/#person" },
         offers: {
           "@type": "Offer",
           price: "0",
           priceCurrency: "USD",
           availability: "https://schema.org/OnlineOnly",
         },
+        potentialAction: {
+          "@type": "UseAction",
+          target: CANONICAL_BASE + "/",
+        },
       },
       {
         "@type": "Person",
         "@id": CANONICAL_BASE + "/#person",
         name: "Steven Vallejo",
-        url: "https://stevenvallejo.com/",
+        givenName: "Steven",
+        familyName: "Vallejo",
+        url: "https://www.stevenvallejo.com",
+        email: "stevenvallejo780@gmail.com",
+        image: "https://www.stevenvallejo.com/avatar.jpg",
         sameAs: [
           "https://github.com/stevenvo780",
           "https://www.linkedin.com/in/stevenvo780",
+          "https://medium.com/@stevenvallejo780",
+          "https://www.stevenvallejo.com",
         ],
+        jobTitle: "Software Engineer & Philosopher",
+        worksFor: { "@type": "Organization", name: "Mouseîon" },
       },
     ],
   };
