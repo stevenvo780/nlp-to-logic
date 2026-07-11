@@ -123,6 +123,42 @@ export const EXAMPLES: Example[] = [
     profile: 'classical.propositional',
     note: 'Argumento central de la Critica de la Razon Pura de Kant formalizado: cadena hipotetica + modus ponens sobre intuicion pura.',
   },
+  // ── Perfiles faltantes ────────────────────────────────────────────────────
+  {
+    id: 'first-order-silogismo',
+    title: 'Lógica de primer orden — universales',
+    text: 'Todo número par es divisible entre dos. Ocho es par. Por lo tanto, ocho es divisible entre dos.',
+    profile: 'classical.first_order',
+    note: 'Primer orden clásico: cuantificación universal y predicados. ∀x(par(x) → divisible(x,2)), par(8) ⊢ divisible(8,2).',
+  },
+  {
+    id: 'intuicionista-prueba',
+    title: 'Lógica intuicionista — construcción de pruebas',
+    text: 'Para cada proposición, o bien se puede construir una prueba, o bien no. Si construyo una prueba de P, entonces P es verdadera. Construí una prueba de P. Por lo tanto, P es verdadera.',
+    profile: 'intuitionistic.propositional',
+    note: 'Intuicionismo: no vale el tercero excluido (P | ¬P no es válido). Se enfatiza la construcción de pruebas sobre falsedad clásica.',
+  },
+  {
+    id: 'paraconsistente-contradiccion',
+    title: 'Lógica paraconsistente Belnap — tolerancia de contradicciones',
+    text: 'El sistema afirma que es obligatorio verificar la información. El sistema también afirma que no es obligatorio verificar. Ni la lógica clásica ni el paraconsistente permiten que ambas sean verdaderas, pero Belnap permite ambas con 4 valores de verdad.',
+    profile: 'paraconsistent.belnap',
+    note: 'Belnap: 4 valores (true, false, both, neither). Permite contradicciones sin explosión lógica (A & ¬A ⊬ B).',
+  },
+  {
+    id: 'probabilistica-bayes',
+    title: 'Lógica probabilística — inferencia bayesiana',
+    text: 'La probabilidad de lluvia es 0.3. Si llueve, la probabilidad de que la calle esté mojada es 0.9. La probabilidad inicial de que la calle esté mojada es 0.2. Observamos que la calle está mojada. ¿Cuál es la probabilidad actualizada de lluvia?',
+    profile: 'probabilistic.basic',
+    note: 'Probabilística: P(X) ∈ [0,1]. Demuestra inferencia bayesiana con actualización de creencias mediante observaciones.',
+  },
+  {
+    id: 'aritmetica-divisibilidad',
+    title: 'Aritmética — propiedades de divisibilidad',
+    text: 'Si un número es divisible entre 6, entonces es divisible entre 2 y entre 3. Doce es divisible entre 6. Por lo tanto, doce es divisible entre 2.',
+    profile: 'arithmetic',
+    note: 'Aritmética: operadores +, *, =, <, mod. Verifica propiedades numéricas como divisibilidad y relaciones de orden.',
+  },
 ];
 
 /** Subset mas corto para el panel de botones de ejemplos en el Playground. */

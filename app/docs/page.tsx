@@ -105,7 +105,7 @@ check valid (P | !P)`}</CodeBlock>
             decisión. Un mismo argumento puede producir resultados distintos según el perfil.
           </p>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
+            <table className="w-full border-collapse text-sm min-w-max">
               <thead>
                 <tr className="border-b border-border text-left">
                   <th className="py-2 pr-4 text-foreground">Perfil</th>
@@ -117,7 +117,7 @@ check valid (P | !P)`}</CodeBlock>
                 {PROFILES_TABLE.map((p) => (
                   <tr key={p.id}>
                     <td className="py-2 pr-4 font-mono text-xs text-accent">{p.id}</td>
-                    <td className="py-2 pr-4 font-mono text-xs">{p.ops}</td>
+                    <td className="py-2 pr-4 font-mono text-xs whitespace-nowrap">{p.ops}</td>
                     <td className="py-2 text-xs">{p.use}</td>
                   </tr>
                 ))}
@@ -281,7 +281,7 @@ derive G from {kant1, kant2, intuicion}   // La geometria euclidiana es posible`
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {SAT_FEATURES.map((f) => (
               <div key={f.title} className="rounded-lg border border-border bg-panel p-4">
-                <h4 className="mb-1 text-sm font-semibold text-foreground">{f.title}</h4>
+                <h3 className="mb-1 text-sm font-semibold text-foreground">{f.title}</h3>
                 <p className="text-xs leading-relaxed text-muted">{f.desc}</p>
               </div>
             ))}
@@ -370,7 +370,12 @@ function Code({ children }: { children: React.ReactNode }) {
 
 function CodeBlock({ children }: { children: string }) {
   return (
-    <pre className="thin-scroll overflow-x-auto rounded-lg border border-border bg-panel-2 p-4 font-mono text-xs leading-relaxed text-foreground">
+    <pre
+      className="thin-scroll overflow-x-auto rounded-lg border border-border bg-panel-2 p-4 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap break-all"
+      tabIndex={0}
+      role="region"
+      aria-label="Bloque de código"
+    >
       {children}
     </pre>
   );

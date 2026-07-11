@@ -23,27 +23,27 @@ export type LogicProfileId =
   | 'arithmetic';
 
 export const PROFILES: { id: LogicProfileId; label: string; hint: string }[] = [
-  { id: 'classical.propositional', label: 'Proposicional clasica', hint: '→  &  |  !  ↔' },
+  { id: 'classical.propositional', label: 'Proposicional clásica', hint: '→  &  |  !  ↔' },
   { id: 'classical.first_order', label: 'Primer orden', hint: '∀  ∃  predicados' },
   { id: 'modal.k', label: 'Modal K', hint: '□  ◇' },
-  { id: 'deontic.standard', label: 'Deontica', hint: 'O (obligacion)  P (permision)' },
-  { id: 'epistemic.s5', label: 'Epistemica S5', hint: 'K (conocimiento)' },
+  { id: 'deontic.standard', label: 'Deóntica', hint: 'O (obligación)  P (permisión)' },
+  { id: 'epistemic.s5', label: 'Epistémica S5', hint: 'K (conocimiento)' },
   { id: 'intuitionistic.propositional', label: 'Intuicionista', hint: 'sin tercero excluido' },
   { id: 'temporal.ltl', label: 'Temporal LTL', hint: 'X  U  G  F' },
   { id: 'paraconsistent.belnap', label: 'Paraconsistente Belnap', hint: '4 valores' },
-  { id: 'aristotelian.syllogistic', label: 'Silogistica aristotelica', hint: 'todo / algun / ningun' },
-  { id: 'probabilistic.basic', label: 'Probabilistica', hint: 'P(·) ∈ [0,1]' },
-  { id: 'arithmetic', label: 'Aritmetica', hint: '+  *  =  <' },
+  { id: 'aristotelian.syllogistic', label: 'Silogística aristotélica', hint: 'todo / algún / ningún' },
+  { id: 'probabilistic.basic', label: 'Probabilística', hint: 'P(·) ∈ [0,1]' },
+  { id: 'arithmetic', label: 'Aritmética', hint: '+  *  =  <' },
 ];
 
 const STATUS_LABEL: Record<string, string> = {
-  provable: 'DERIVABLE / VALIDO',
-  valid: 'VALIDO (tautologia)',
+  provable: 'DERIVABLE / VÁLIDO',
+  valid: 'VÁLIDO (tautología)',
   derivable: 'DERIVABLE',
   satisfiable: 'SATISFACIBLE',
   unsatisfiable: 'INSATISFACIBLE',
   refutable: 'REFUTABLE (no se sostiene)',
-  invalid: 'INVALIDO (hay contramodelo)',
+  invalid: 'INVÁLIDO (hay contramodelo)',
   unprovable: 'NO DEMOSTRABLE',
   underivable: 'NO DERIVABLE',
   unknown: 'INDETERMINADO',

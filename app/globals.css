@@ -12,8 +12,8 @@
   --primary: #43b5a6;
   --primary-strong: #2a7a70;
   --on-primary: #071a17;
-  --accent: #8d7cc0;
-  --accent-strong: #5a3a9a;
+  --accent: #e0a85e;
+  --accent-strong: #d4933f;
   --accent-3: #A3E4D7;
   --on-accent: #1a1206;
   --link: #43b5a6;
@@ -21,8 +21,8 @@
   --success: #34D399;
   --warning: #FBBF24;
   --danger: #F87171;
-  /* gradiente-firma Órganon */
-  --gradient-brand: linear-gradient(135deg, #43b5a6 0%, #8d7cc0 55%, #5a3a9a 100%);
+  /* gradiente-firma Órganon — Cloud Atlas: teal + dorado */
+  --gradient-brand: linear-gradient(135deg, #43b5a6 0%, #e0a85e 55%, #d4933f 100%);
 }
 
 /* Aliases de compatibilidad para las clases Tailwind existentes */
@@ -35,8 +35,8 @@
   --muted: var(--text-muted);
   /* accent en el codigo = primary teal (#43b5a6 Cloud Atlas) */
   --accent-ui: var(--primary);
-  /* accent-2 en el codigo = teal profundo (#2a7a70, acento de frente Informática) */
-  --accent-2-ui: #2a7a70;
+  /* accent-2 en el codigo = teal más claro para contraste WCAG AA (#5fb3a8, en lugar de #2a7a70) */
+  --accent-2-ui: #5fb3a8;
   --ok: var(--success);
   --warn: var(--warning);
   --err: var(--danger);

@@ -186,7 +186,12 @@ function CasoCard({ caso }: { caso: Caso }) {
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
             Codigo ST generado (extracto)
           </h3>
-          <pre className="thin-scroll overflow-x-auto rounded-md border border-border bg-panel-2 p-3 font-mono text-[11px] leading-relaxed text-foreground">
+          <pre
+            className="thin-scroll overflow-x-auto rounded-md border border-border bg-panel-2 p-3 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap break-all"
+            tabIndex={0}
+            role="region"
+            aria-label="Código ST generado"
+          >
             {caso.stExtracto}
           </pre>
         </div>

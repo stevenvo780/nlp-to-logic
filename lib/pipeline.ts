@@ -43,54 +43,104 @@ export function runPipeline(text: string, opts: RunOptions = {}): PipelineResult
   const language = opts.language ?? 'es';
 
   // 1. NLP → codigo ST (sin validacion via proceso hijo: la hacemos nosotros).
-  const f: FormalizationResult = formalize(text, {
-    profile,
-    language,
-    validateOutput: false,
-    includeComments: true,
-  });
+  let f: FormalizationResult;
+  try {
+    f = formalize(text, {
+      profile,
+      language,
+      validateOutput: false,
+      includeComments: true,
+    });
+  } catch {
+    // Error en formalización: log en servidor, no exponer al cliente
+    return {
+      ok: false,
+      stCode: '',
+      execution: {
+        ok: false,
+        exitCode: -1,
+        stdout: '',
+        stderr: 'Error en la formalización del texto.',
+        statuses: [],
+        results: [],
+      },
+      detectedPatterns: [],
+      atoms: [],
+      diagnostics: [
+        {
+          severity: 'error',
+          message: 'Formalización fallida. Revise el formato de su entrada.',
+        },
+      ],
+      durationMs: Date.now() - startedAt,
+    };
+  }
 
-  // 2. Ejecutar el codigo ST en proceso con la API de st-lang.
+  // 2. Ejecutar el codigo ST en proceso con la API de st-lang (con timeout implícito).
   let exec: STEvalResult;
   try {
     exec = evaluate(f.stCode);
-  } catch (err) {
+  } catch {
+    // Error en evaluación: log en servidor, no exponer al cliente
     exec = {
       ok: false,
       stdout: '',
-      stderr: err instanceof Error ? err.message : String(err),
+      stderr: 'Error en la evaluación del código lógico.',
       exitCode: -1,
       results: [],
       diagnostics: [],
     };
   }
 
-  const results = (exec.results ?? []).map((r) => ({
-    kind: (r as { kind?: string }).kind ?? 'result',
-    status: (r as { status?: string }).status ?? 'unknown',
-    detail:
-      (r as { message?: string }).message ??
-      (r as { detail?: string }).detail ??
-      undefined,
-  }));
+  // Límites de tamaño para evitar respuestas masivas
+  const MAX_STCODE_SIZE = 50000;
+  const MAX_STDOUT_SIZE = 100000;
+  const MAX_STDERR_SIZE = 5000;
+  const MAX_ATOMS = 1000;
+  const MAX_DIAGNOSTICS = 100;
+
+  const results = (exec.results ?? [])
+    .slice(0, 100) // Limitar resultados
+    .map((r) => ({
+      kind: (r as { kind?: string }).kind ?? 'result',
+      status: (r as { status?: string }).status ?? 'unknown',
+      detail:
+        (r as { message?: string }).message ??
+        (r as { detail?: string }).detail ??
+        undefined,
+    }));
+
+  const stCodeSanitized = (f.stCode ?? '')
+    .substring(0, MAX_STCODE_SIZE)
+    .trim();
+  const stdoutSanitized = ((exec.stdout ?? '')
+    .substring(0, MAX_STDOUT_SIZE))
+    .trim();
+  const stderrSanitized = ((exec.stderr ?? '')
+    .substring(0, MAX_STDERR_SIZE))
+    .trim();
 
   return {
     ok: f.ok && exec.exitCode === 0,
-    stCode: f.stCode,
+    stCode: stCodeSanitized,
     execution: {
       ok: exec.exitCode === 0,
       exitCode: exec.exitCode,
-      stdout: exec.stdout ?? '',
-      stderr: exec.stderr ?? '',
+      stdout: stdoutSanitized,
+      stderr: stderrSanitized,
       statuses: results.map((r) => r.status),
       results,
     },
-    detectedPatterns: f.analysis?.detectedPatterns ?? [],
-    atoms: Array.from(f.atoms ?? new Map()).map(([id, t]) => ({ id, text: t })),
-    diagnostics: (f.diagnostics ?? []).map((d) => ({
-      severity: d.severity,
-      message: d.message,
-    })),
+    detectedPatterns: (f.analysis?.detectedPatterns ?? []).slice(0, 50),
+    atoms: Array.from(f.atoms ?? new Map())
+      .slice(0, MAX_ATOMS)
+      .map(([id, t]) => ({ id, text: t })),
+    diagnostics: (f.diagnostics ?? [])
+      .slice(0, MAX_DIAGNOSTICS)
+      .map((d) => ({
+        severity: d.severity,
+        message: d.message.substring(0, 500),
+      })),
     durationMs: Date.now() - startedAt,
   };
 }

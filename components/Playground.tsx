@@ -120,7 +120,7 @@ function PlaygroundInner() {
             key={ex.id}
             onClick={() => loadExample(ex.id)}
             title={ex.note}
-            className="rounded-full border border-border bg-panel-2 px-3 py-1 text-xs text-muted transition hover:border-accent hover:text-foreground"
+            className="rounded-full border border-border bg-panel-2 px-3 py-2 text-xs text-muted transition hover:border-accent hover:text-foreground min-h-10"
           >
             {ex.title}
           </button>
@@ -201,9 +201,12 @@ function Panel({
 function CodeBlock({ text, empty }: { text: string; empty?: boolean }) {
   return (
     <pre
-      className={`thin-scroll h-72 overflow-auto rounded-md border border-border bg-panel-2 p-3 font-mono text-xs leading-relaxed ${
+      className={`thin-scroll h-72 overflow-auto rounded-md border border-border bg-panel-2 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap word-break break-all ${
         empty ? 'text-muted' : 'text-foreground'
       }`}
+      tabIndex={0}
+      role="region"
+      aria-label="Bloque de código generado"
     >
       {text}
     </pre>

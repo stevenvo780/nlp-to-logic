@@ -244,12 +244,12 @@ export default function Home() {
           <p className="mb-2 text-xs" style={{ color: 'var(--primary)' }}>
             Parte de <strong>Mouseîon</strong> · por Steven Vallejo
           </p>
-          <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
             <a
               href="https://www.stevenvallejo.com/es#filosofia"
               target="_blank"
               rel="noreferrer"
-              className="hover:text-foreground transition-colors"
+              className="py-2 hover:text-foreground transition-colors inline-block"
             >
               Filosofía
             </a>
@@ -257,7 +257,7 @@ export default function Home() {
               href="https://www.stevenvallejo.com/es#ciencias"
               target="_blank"
               rel="noreferrer"
-              className="hover:text-foreground transition-colors"
+              className="py-2 hover:text-foreground transition-colors inline-block"
             >
               Ciencias
             </a>
@@ -265,7 +265,7 @@ export default function Home() {
               href="https://www.stevenvallejo.com/es#informatica"
               target="_blank"
               rel="noreferrer"
-              className="hover:text-foreground transition-colors"
+              className="py-2 hover:text-foreground transition-colors inline-block"
             >
               Informática
             </a>
@@ -273,7 +273,7 @@ export default function Home() {
               href="https://www.stevenvallejo.com/es#ingenieria"
               target="_blank"
               rel="noreferrer"
-              className="hover:text-foreground transition-colors"
+              className="py-2 hover:text-foreground transition-colors inline-block"
             >
               Ingeniería
             </a>
@@ -299,7 +299,7 @@ function TechCard({
   badgeColor,
   href,
   docsHref,
-  docsLabel = 'Documentacion →',
+  docsLabel = 'Documentación →',
   children,
 }: {
   title: string;
