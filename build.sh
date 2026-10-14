@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Preserve Next.js failures when build output is piped through tee.
+set -o pipefail
+
 echo "Building Órganon (Next.js 15.5.19)..."
 ./node_modules/.bin/next build 2>&1 | tee /tmp/build_output.log || {
   # Captura exit code
