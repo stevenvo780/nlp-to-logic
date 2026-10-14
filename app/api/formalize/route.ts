@@ -34,6 +34,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Cuerpo JSON invalido.' }, { status: 400 });
   }
 
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return NextResponse.json({ error: 'Cuerpo JSON invalido.' }, { status: 400 });
+  }
+
   // Validar type de text
   if (typeof body.text !== 'string') {
     return NextResponse.json({ error: 'El campo text debe ser string.' }, { status: 400 });
